@@ -91,7 +91,12 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
 
           if (bestMatchIndex !== -1) {
             const match = availableDetections.splice(bestMatchIndex, 1)[0];
-            updatedTracks[parseInt(trackId)] = { ...match, lastSeen: now };
+            updatedTracks[parseInt(trackId)] = { 
+              bbox: match.bbox, 
+              class: match.class, 
+              score: match.score, 
+              lastSeen: now 
+            };
           } else if (now - track.lastSeen < 500) { 
             // Keep track alive for a short while even if not detected (occlusion/missed frame)
             updatedTracks[parseInt(trackId)] = track;

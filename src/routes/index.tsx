@@ -50,8 +50,9 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
     if (model && videoRef.current && videoRef.current.readyState === 4) {
       // Logic improvement: Skip frames if processing is slow to maintain stability
       detectionCounter.current++;
-      if (detectionCounter.current % 4 === 0) { 
-        const predictions = await model.detect(videoRef.current, 8, 0.5); 
+      if (detectionCounter.current % 3 === 0) { 
+        const predictions = await model.detect(videoRef.current, 12, 0.4); 
+
 
         
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];

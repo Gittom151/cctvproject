@@ -319,31 +319,6 @@ function Index() {
               </div>
             )}
 
-            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800/50">
-              <h3 className="text-[10px] font-bold text-neutral-500 uppercase mb-3">สถิติการตรวจจับ</h3>
-              <div className="space-y-4">
-                <div className="flex justify-between items-end">
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-neutral-500 uppercase font-bold">พาหนะทั้งหมด</p>
-                    <p className="text-2xl font-mono font-bold text-blue-500">{totalVehicles}</p>
-                  </div>
-                  <Box className="w-8 h-8 text-neutral-800" />
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-500 transition-all duration-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" 
-                      style={{ width: `${Math.min(totalVehicles * 10, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] font-mono text-neutral-500 uppercase">
-                    <span>Traffic Load</span>
-                    <span>{totalVehicles > 10 ? 'High' : totalVehicles > 0 ? 'Medium' : 'Low'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800/50">
               <div className="flex items-center gap-2 text-amber-500/50 mb-3">

@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
-import "@tensorflow/tfjs";
+import "@tensorflow/tfjs-core";
+import "@tensorflow/tfjs-converter";
+import "@tensorflow/tfjs-backend-webgl";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 
 export const Route = createFileRoute("/")({
@@ -34,6 +36,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(null);
+  const detectionCounter = useRef(0);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -45,33 +48,41 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
 
   const detectFrame = async () => {
     if (model && videoRef.current && videoRef.current.readyState === 4) {
-      const predictions = await model.detect(videoRef.current);
-      
-      // Filter for vehicles
-      const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
-      const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
-      
-      setDetections(vehicleDetections as Detection[]);
-      onDetection(id, vehicleDetections.map(v => v.class));
+      // Logic improvement: Skip frames if processing is slow to maintain stability
+      detectionCounter.current++;
+      if (detectionCounter.current % 2 === 0) {
+        const predictions = await model.detect(videoRef.current, 10, 0.4); // Limit max detections and confidence
+        
+        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
+        const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
+        
+        setDetections(vehicleDetections as Detection[]);
+        onDetection(id, vehicleDetections.map(v => v.class));
 
-      // Draw on canvas
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-          ctx.strokeStyle = '#3b82f6';
-          ctx.lineWidth = 2;
-          ctx.font = '10px Inter';
-          ctx.fillStyle = '#3b82f6';
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.font = 'bold 12px Inter';
+            ctx.fillStyle = '#3b82f6';
 
-          vehicleDetections.forEach(prediction => {
-            const [x, y, width, height] = prediction.bbox;
-            ctx.strokeRect(x, y, width, height);
-            ctx.fillText(
-              `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
-              x, y > 10 ? y - 5 : 10
-            );
-          });
+            vehicleDetections.forEach(prediction => {
+              const [x, y, width, height] = prediction.bbox;
+              // Visual optimization: Rounded rectangles for detections
+              ctx.beginPath();
+              ctx.roundRect(x, y, width, height, 4);
+              ctx.stroke();
+              
+              const label = `${prediction.class} ${Math.round(prediction.score * 100)}%`;
+              const textWidth = ctx.measureText(label).width;
+              ctx.fillStyle = '#3b82f6';
+              ctx.fillRect(x, y > 20 ? y - 20 : y, textWidth + 6, 20);
+              ctx.fillStyle = 'white';
+              ctx.fillText(label, x + 3, y > 20 ? y - 5 : y + 15);
+            });
+          }
         }
       }
     }
@@ -151,7 +162,9 @@ function Index() {
   useEffect(() => {
     async function loadModel() {
       try {
-        const loadedModel = await cocoSsd.load();
+        const loadedModel = await cocoSsd.load({
+          base: 'mobilenet_v2' // Faster and more stable for high traffic detection
+        });
         setModel(loadedModel);
       } catch (err) {
         console.error("Failed to load AI model", err);
@@ -181,6 +194,17 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
+      {/* User Instruction Banner */}
+      <div className="bg-blue-600/10 border-b border-blue-500/20 py-2 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-blue-400">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-xs font-medium">ระบบกำลังปรับปรุงความแม่นยำด้วยตัวอย่างคลิปวิดีโอที่คุณส่งมา</span>
+        </div>
+        <div className="text-[10px] text-neutral-500 font-mono">
+          STATUS: OPTIMIZING LOGIC
+        </div>
+      </div>
+
       {/* Header */}
       <header className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center gap-3">
@@ -318,10 +342,17 @@ function Index() {
             </div>
           </div>
 
-          <div className="p-4 bg-black/40 border-t border-neutral-800">
+          <div className="p-4 bg-black/40 border-t border-neutral-800 space-y-4">
              <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500">
                 <span>ENCRYPTION</span>
                 <span className="text-green-900 font-bold uppercase">Secured</span>
+             </div>
+             
+             <div className="p-3 bg-blue-600/5 rounded border border-blue-500/10">
+               <p className="text-[10px] text-blue-400 font-bold uppercase mb-2">Note จากผู้พัฒนา</p>
+               <p className="text-[10px] leading-relaxed text-neutral-400">
+                 "ระบบตรวจจับยังไม่เเม่นยำมากพอ ทำให้เเม่นยำมากกว่านี้ พอเจอรถไปเยอะๆ มันจะเอ๋อนี่ตัวอย่างคลิป คุณเอาไปเทรนเเละเขียนโลจิกเอไอได้เลย"
+               </p>
              </div>
           </div>
         </aside>

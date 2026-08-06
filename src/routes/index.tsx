@@ -56,19 +56,34 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       
-      // Perform detection less frequently to save resources, but render every frame
-      if (detectionCounter.current % 4 === 0) { 
-        const predictions = model ? await model.detect(video, 15, 0.3) : [];
+      // AI Processing: Every 3 frames for stability
+      if (detectionCounter.current % 3 === 0) { 
+        // Increase confidence to 0.5 to filter "ghost" detections
+        const predictions = model ? await model.detect(video, 12, 0.5) : [];
         
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
         const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
         
-        lastDetectionsRef.current = vehicleDetections;
-        setDetections(vehicleDetections);
-        onDetection(id, vehicleDetections.map(v => v.class));
+        // Filter out overlapping boxes (Non-Maximum Suppression logic)
+        const filteredDetections = vehicleDetections.filter((det, index) => {
+          return !vehicleDetections.some((other, otherIndex) => {
+            if (index === otherIndex) return false;
+            // If boxes overlap more than 70%, keep only the one with higher score
+            const [x1, y1, w1, h1] = det.bbox;
+            const [x2, y2, w2, h2] = other.bbox;
+            const overlap = (Math.max(0, Math.min(x1 + w1, x2 + w2) - Math.max(x1, x2)) * 
+                             Math.max(0, Math.min(y1 + h1, y2 + h2) - Math.max(y1, y2)));
+            const area1 = w1 * h1;
+            return (overlap / area1 > 0.7) && (other.score > det.score);
+          });
+        });
+
+        lastDetectionsRef.current = filteredDetections;
+        setDetections(filteredDetections);
+        onDetection(id, filteredDetections.map(v => v.class));
       }
 
-      // Smooth Rendering Logic (Runs 60fps)
+      // High-Fidelity Rendering Logic
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -84,14 +99,14 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
             const targetW = width * scaleX;
             const targetH = height * scaleY;
 
-            // Simple Lerp for ultra-smooth movement
-            const id = `${prediction.class}-${index}`;
-            if (!smoothedBoxesRef.current[id]) {
-              smoothedBoxesRef.current[id] = [targetX, targetY, targetW, targetH];
+            const boxId = `${prediction.class}-${index}`;
+            if (!smoothedBoxesRef.current[boxId]) {
+              smoothedBoxesRef.current[boxId] = [targetX, targetY, targetW, targetH];
             } else {
-              const current = smoothedBoxesRef.current[id];
-              const lerpFactor = 0.2; // Adjust for smoothness vs speed
-              smoothedBoxesRef.current[id] = [
+              const current = smoothedBoxesRef.current[boxId];
+              // Responsive Lerp: Faster movement for accuracy, but still smooth
+              const lerpFactor = 0.35; 
+              smoothedBoxesRef.current[boxId] = [
                 current[0] + (targetX - current[0]) * lerpFactor,
                 current[1] + (targetY - current[1]) * lerpFactor,
                 current[2] + (targetW - current[2]) * lerpFactor,
@@ -99,30 +114,30 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
               ];
             }
 
-            const [rectX, rectY, rectW, rectH] = smoothedBoxesRef.current[id];
+            const [rectX, rectY, rectW, rectH] = smoothedBoxesRef.current[boxId];
 
-            // Visual Style: Red alert boxes with glow
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = 'rgba(239, 68, 68, 0.6)'; // Red glow
-            ctx.strokeStyle = '#ef4444'; // Red-500
-            ctx.lineWidth = 3;
+            // Professional Surveillance Style
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2;
 
+            // Box with corner focus
             ctx.beginPath();
-            ctx.roundRect(rectX, rectY, rectW, rectH, 6);
+            ctx.roundRect(rectX, rectY, rectW, rectH, 2);
             ctx.stroke();
             
+            // Minimalist Data Tag
             ctx.shadowBlur = 0;
-            
-            // Clean Label: Just the class name
-            const labelText = prediction.class.toUpperCase();
-            ctx.font = 'bold 11px Inter';
+            const labelText = `${prediction.class.toUpperCase()} ${Math.round(prediction.score * 100)}%`;
+            ctx.font = 'bold 10px "JetBrains Mono", monospace';
             const textWidth = ctx.measureText(labelText).width;
             
-            ctx.fillStyle = '#ef4444';
-            ctx.fillRect(rectX, rectY - 20, textWidth + 12, 20);
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+            ctx.fillRect(rectX, rectY - 16, textWidth + 8, 16);
             
             ctx.fillStyle = 'white';
-            ctx.fillText(labelText, rectX + 6, rectY - 6);
+            ctx.fillText(labelText, rectX + 4, rectY - 4);
           });
         }
       }

@@ -71,17 +71,29 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
 
             vehicleDetections.forEach(prediction => {
               const [x, y, width, height] = prediction.bbox;
-              // Visual optimization: Rounded rectangles for detections
+              
+              // Normalize coordinates if necessary
+              // COCO-SSD returns [x, y, width, height]
+              // We need to ensure the canvas scaling matches the video display
+              const video = videoRef.current!;
+              const scaleX = canvasRef.current!.width / video.videoWidth;
+              const scaleY = canvasRef.current!.height / video.videoHeight;
+
+              const rectX = x * scaleX;
+              const rectY = y * scaleY;
+              const rectW = width * scaleX;
+              const rectH = height * scaleY;
+
               ctx.beginPath();
-              ctx.roundRect(x, y, width, height, 4);
+              ctx.roundRect(rectX, rectY, rectW, rectH, 4);
               ctx.stroke();
               
               const label = `${prediction.class} ${Math.round(prediction.score * 100)}%`;
               const textWidth = ctx.measureText(label).width;
               ctx.fillStyle = '#3b82f6';
-              ctx.fillRect(x, y > 20 ? y - 20 : y, textWidth + 6, 20);
+              ctx.fillRect(rectX, rectY > 20 ? rectY - 20 : rectY, textWidth + 6, 20);
               ctx.fillStyle = 'white';
-              ctx.fillText(label, x + 3, y > 20 ? y - 5 : y + 15);
+              ctx.fillText(label, rectX + 3, rectY > 20 ? rectY - 5 : rectY + 15);
             });
           }
         }

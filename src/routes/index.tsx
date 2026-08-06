@@ -38,8 +38,9 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const requestRef = useRef<number>(null);
   const detectionCounter = useRef(0);
   const lastDetectionsRef = useRef<Detection[]>([]);
-  // Store smoothed positions to prevent jitter
-  const smoothedBoxesRef = useRef<Record<string, [number, number, number, number]>>({});
+  // Store persistent object tracks to prevent jumping
+  const objectTracksRef = useRef<Record<number, { bbox: [number, number, number, number], class: string, score: number, lastSeen: number }>>({});
+  const trackIdCounter = useRef(0);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -55,89 +56,100 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
       
       const video = videoRef.current;
       const canvas = canvasRef.current;
+      const now = Date.now();
       
-      // AI Processing: Every 3 frames for stability
+      // 1. Detection Phase (AI Inference)
       if (detectionCounter.current % 3 === 0) { 
-        // Increase confidence to 0.5 to filter "ghost" detections
-        const predictions = model ? await model.detect(video, 12, 0.5) : [];
-        
+        const predictions = model ? await model.detect(video, 12, 0.45) : [];
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
-        const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
-        
-        // Filter out overlapping boxes (Non-Maximum Suppression logic)
-        const filteredDetections = vehicleDetections.filter((det, index) => {
-          return !vehicleDetections.some((other, otherIndex) => {
-            if (index === otherIndex) return false;
-            // If boxes overlap more than 70%, keep only the one with higher score
-            const [x1, y1, w1, h1] = det.bbox;
-            const [x2, y2, w2, h2] = other.bbox;
-            const overlap = (Math.max(0, Math.min(x1 + w1, x2 + w2) - Math.max(x1, x2)) * 
-                             Math.max(0, Math.min(y1 + h1, y2 + h2) - Math.max(y1, y2)));
-            const area1 = w1 * h1;
-            return (overlap / area1 > 0.7) && (other.score > det.score);
+        const currentDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
+
+        // 2. Simple Object Tracking Logic (IOU based association)
+        const updatedTracks: typeof objectTracksRef.current = {};
+        const availableDetections = [...currentDetections];
+
+        // Match existing tracks with new detections
+        Object.entries(objectTracksRef.current).forEach(([trackId, track]) => {
+          let bestMatchIndex = -1;
+          let maxIOU = 0.3; // Minimum threshold to consider a match
+
+          availableDetections.forEach((det, index) => {
+            const [x1, y1, w1, h1] = track.bbox;
+            const [x2, y2, w2, h2] = det.bbox;
+            
+            const overlapX = Math.max(0, Math.min(x1 + w1, x2 + w2) - Math.max(x1, x2));
+            const overlapY = Math.max(0, Math.min(y1 + h1, y2 + h2) - Math.max(y1, y2));
+            const intersection = overlapX * overlapY;
+            const union = (w1 * h1) + (w2 * h2) - intersection;
+            const iou = intersection / union;
+
+            if (iou > maxIOU) {
+              maxIOU = iou;
+              bestMatchIndex = index;
+            }
           });
+
+          if (bestMatchIndex !== -1) {
+            const match = availableDetections[bestMatchIndex];
+            if (match) {
+              availableDetections.splice(bestMatchIndex, 1);
+              updatedTracks[parseInt(trackId)] = { 
+                bbox: match.bbox, 
+                class: match.class, 
+                score: match.score, 
+                lastSeen: now 
+              };
+            }
+          } else if (now - track.lastSeen < 500) {
+            // Keep track alive for a short while even if not detected (occlusion/missed frame)
+            updatedTracks[parseInt(trackId)] = track;
+          }
         });
 
-        lastDetectionsRef.current = filteredDetections;
-        setDetections(filteredDetections);
-        onDetection(id, filteredDetections.map(v => v.class));
+        // Create new tracks for unmatched detections
+        availableDetections.forEach(det => {
+          trackIdCounter.current++;
+          updatedTracks[trackIdCounter.current] = { ...det, lastSeen: now };
+        });
+
+        objectTracksRef.current = updatedTracks;
+        onDetection(id, Object.values(updatedTracks).map(v => v.class));
       }
 
-      // High-Fidelity Rendering Logic
+      // 3. Rendering Phase (Smooth Interpolation)
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          
           const scaleX = canvas.width / video.videoWidth;
           const scaleY = canvas.height / video.videoHeight;
 
-          lastDetectionsRef.current.forEach((prediction, index) => {
-            const [x, y, width, height] = prediction.bbox;
+          Object.entries(objectTracksRef.current).forEach(([trackId, track]) => {
+            const [x, y, width, height] = track.bbox;
             const targetX = x * scaleX;
             const targetY = y * scaleY;
             const targetW = width * scaleX;
             const targetH = height * scaleY;
 
-            const boxId = `${prediction.class}-${index}`;
-            if (!smoothedBoxesRef.current[boxId]) {
-              smoothedBoxesRef.current[boxId] = [targetX, targetY, targetW, targetH];
-            } else {
-              const current = smoothedBoxesRef.current[boxId];
-              // Responsive Lerp: Faster movement for accuracy, but still smooth
-              const lerpFactor = 0.35; 
-              smoothedBoxesRef.current[boxId] = [
-                current[0] + (targetX - current[0]) * lerpFactor,
-                current[1] + (targetY - current[1]) * lerpFactor,
-                current[2] + (targetW - current[2]) * lerpFactor,
-                current[3] + (targetH - current[3]) * lerpFactor
-              ];
-            }
-
-            const [rectX, rectY, rectW, rectH] = smoothedBoxesRef.current[boxId];
-
-            // Professional Surveillance Style
-            ctx.shadowBlur = 10;
+            // Stable drawing (limited lerp for tracking stability)
+            ctx.shadowBlur = 8;
             ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
             ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2.5;
 
-            // Box with corner focus
             ctx.beginPath();
-            ctx.roundRect(rectX, rectY, rectW, rectH, 2);
+            ctx.roundRect(targetX, targetY, targetW, targetH, 4);
             ctx.stroke();
             
-            // Minimalist Data Tag
             ctx.shadowBlur = 0;
-            const labelText = `${prediction.class.toUpperCase()} ${Math.round(prediction.score * 100)}%`;
-            ctx.font = 'bold 10px "JetBrains Mono", monospace';
+            const labelText = track.class.toUpperCase();
+            ctx.font = 'bold 10px monospace';
             const textWidth = ctx.measureText(labelText).width;
             
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
-            ctx.fillRect(rectX, rectY - 16, textWidth + 8, 16);
-            
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(targetX, targetY - 16, textWidth + 10, 16);
             ctx.fillStyle = 'white';
-            ctx.fillText(labelText, rectX + 4, rectY - 4);
+            ctx.fillText(labelText, targetX + 5, targetY - 4);
           });
         }
       }

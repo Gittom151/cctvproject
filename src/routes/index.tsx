@@ -177,7 +177,7 @@ function Index() {
     async function loadModel() {
       try {
         const loadedModel = await cocoSsd.load({
-          base: 'lite_mobilenet_v2' 
+          base: 'mobilenet_v2' 
         });
         setModel(loadedModel);
       } catch (err) {

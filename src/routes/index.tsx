@@ -342,10 +342,17 @@ function Index() {
             </div>
           </div>
 
-          <div className="p-4 bg-black/40 border-t border-neutral-800">
+          <div className="p-4 bg-black/40 border-t border-neutral-800 space-y-4">
              <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500">
                 <span>ENCRYPTION</span>
                 <span className="text-green-900 font-bold uppercase">Secured</span>
+             </div>
+             
+             <div className="p-3 bg-blue-600/5 rounded border border-blue-500/10">
+               <p className="text-[10px] text-blue-400 font-bold uppercase mb-2">Note จากผู้พัฒนา</p>
+               <p className="text-[10px] leading-relaxed text-neutral-400">
+                 "ระบบตรวจจับยังไม่เเม่นยำมากพอ ทำให้เเม่นยำมากกว่านี้ พอเจอรถไปเยอะๆ มันจะเอ๋อนี่ตัวอย่างคลิป คุณเอาไปเทรนเเละเขียนโลจิกเอไอได้เลย"
+               </p>
              </div>
           </div>
         </aside>

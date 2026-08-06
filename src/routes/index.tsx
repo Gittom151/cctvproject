@@ -229,7 +229,7 @@ function Index() {
           <span className="text-xs font-medium">ระบบกำลังปรับปรุงความแม่นยำด้วยตัวอย่างคลิปวิดีโอที่คุณส่งมา</span>
         </div>
         <div className="text-[10px] text-neutral-500 font-mono">
-          STATUS: OPTIMIZING LOGIC
+          STATUS: {model ? 'USING MOBILENET_V2' : 'LOADING AI...'}
         </div>
       </div>
 

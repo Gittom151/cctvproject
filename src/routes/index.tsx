@@ -32,14 +32,14 @@ interface CCTVMonitorProps {
 function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
-  // Use state for smooth interpolation
-  const [smoothDetections, setSmoothDetections] = useState<Detection[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(null);
   const detectionCounter = useRef(0);
   const lastDetectionsRef = useRef<Detection[]>([]);
+  // Store smoothed positions to prevent jitter
+  const smoothedBoxesRef = useRef<Record<string, [number, number, number, number]>>({});
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -56,10 +56,9 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       
-      // Real-time YOLOv11 Engine Inference
-      // We detect every 2 frames for performance, but interpolate for smoothness
-      if (detectionCounter.current % 2 === 0) { 
-        const predictions = model ? await model.detect(video, 15, 0.35) : []; // Lower threshold for better tracking
+      // Perform detection less frequently to save resources, but render every frame
+      if (detectionCounter.current % 4 === 0) { 
+        const predictions = model ? await model.detect(video, 15, 0.3) : [];
         
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
         const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
@@ -69,7 +68,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
         onDetection(id, vehicleDetections.map(v => v.class));
       }
 
-      // Smooth Interpolation & Rendering Logic
+      // Smooth Rendering Logic (Runs 60fps)
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -78,38 +77,52 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
           const scaleX = canvas.width / video.videoWidth;
           const scaleY = canvas.height / video.videoHeight;
 
-          lastDetectionsRef.current.forEach(prediction => {
+          lastDetectionsRef.current.forEach((prediction, index) => {
             const [x, y, width, height] = prediction.bbox;
+            const targetX = x * scaleX;
+            const targetY = y * scaleY;
+            const targetW = width * scaleX;
+            const targetH = height * scaleY;
 
-            const rectX = x * scaleX;
-            const rectY = y * scaleY;
-            const rectW = width * scaleX;
-            const rectH = height * scaleY;
+            // Simple Lerp for ultra-smooth movement
+            const id = `${prediction.class}-${index}`;
+            if (!smoothedBoxesRef.current[id]) {
+              smoothedBoxesRef.current[id] = [targetX, targetY, targetW, targetH];
+            } else {
+              const current = smoothedBoxesRef.current[id];
+              const lerpFactor = 0.2; // Adjust for smoothness vs speed
+              smoothedBoxesRef.current[id] = [
+                current[0] + (targetX - current[0]) * lerpFactor,
+                current[1] + (targetY - current[1]) * lerpFactor,
+                current[2] + (targetW - current[2]) * lerpFactor,
+                current[3] + (targetH - current[3]) * lerpFactor
+              ];
+            }
 
-            // Visual Optimization: Neon Glow Effect for YOLOv11
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = '#22c55e';
-            ctx.strokeStyle = '#22c55e';
-            ctx.lineWidth = 2.5;
+            const [rectX, rectY, rectW, rectH] = smoothedBoxesRef.current[id];
 
-            // Drawing Smooth Bounding Box
+            // Visual Style: Red alert boxes with glow
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = 'rgba(239, 68, 68, 0.6)'; // Red glow
+            ctx.strokeStyle = '#ef4444'; // Red-500
+            ctx.lineWidth = 3;
+
             ctx.beginPath();
-            ctx.roundRect(rectX, rectY, rectW, rectH, 4);
+            ctx.roundRect(rectX, rectY, rectW, rectH, 6);
             ctx.stroke();
             
-            // Reset shadow for text
             ctx.shadowBlur = 0;
             
-            const label = `YOLOv11: ${prediction.class} ${(prediction.score * 100).toFixed(0)}%`;
-            ctx.font = 'bold 12px Inter';
-            const textWidth = ctx.measureText(label).width;
+            // Clean Label: Just the class name
+            const labelText = prediction.class.toUpperCase();
+            ctx.font = 'bold 11px Inter';
+            const textWidth = ctx.measureText(labelText).width;
             
-            // Modern Tag Design
-            ctx.fillStyle = '#22c55e';
-            ctx.fillRect(rectX, rectY - 22, textWidth + 10, 22);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(rectX, rectY - 20, textWidth + 12, 20);
             
-            ctx.fillStyle = 'black';
-            ctx.fillText(label, rectX + 5, rectY - 6);
+            ctx.fillStyle = 'white';
+            ctx.fillText(labelText, rectX + 6, rectY - 6);
           });
         }
       }

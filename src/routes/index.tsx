@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
-import "@tensorflow/tfjs";
+import "@tensorflow/tfjs-core";
+import "@tensorflow/tfjs-converter";
+import "@tensorflow/tfjs-backend-webgl";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 
 export const Route = createFileRoute("/")({

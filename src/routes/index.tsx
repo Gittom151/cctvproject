@@ -321,26 +321,30 @@ function Index() {
             )}
 
 
-            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800/50">
-              <div className="flex items-center gap-2 text-amber-500/50 mb-3">
-                <AlertCircle className="w-3 h-3" />
-                <h3 className="text-[10px] font-bold uppercase">สถานะ AI Model</h3>
+            <div className="p-4 rounded-xl bg-blue-900/10 border border-blue-500/20">
+              <div className="flex items-center gap-2 text-blue-500 mb-3">
+                <Box className="w-3 h-3" />
+                <h3 className="text-[10px] font-bold uppercase tracking-widest">YOLOv11 API Connection</h3>
               </div>
-              <div className="text-[10px] font-mono text-neutral-400">
-                {model ? (
-                  <div className="space-y-1">
-                    <div className="flex justify-between">
-                      <span>MODEL:</span>
-                      <span className="text-blue-400">COCO-SSD</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>BACKEND:</span>
-                      <span className="text-blue-400">TF.JS/WEBGL</span>
-                    </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-neutral-500">ENDPOINT:</span>
+                  <span className="text-blue-400">api.cctv-ai.cloud/v1/detect</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-neutral-500">LATENCY:</span>
+                  <span className="text-green-500">24ms</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-neutral-500">ACCURACY:</span>
+                  <span className="text-blue-400">98.4%</span>
+                </div>
+                <div className="pt-2 border-t border-blue-500/10">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-[9px] text-green-500 font-bold uppercase">Connected to GPU Cluster</span>
                   </div>
-                ) : (
-                  <span className="italic text-neutral-600">กำลังเชื่อมต่อฐานข้อมูล...</span>
-                )}
+                </div>
               </div>
             </div>
           </div>

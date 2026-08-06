@@ -59,8 +59,10 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
       const now = Date.now();
       
       // 1. Detection Phase (AI Inference)
-      if (detectionCounter.current % 3 === 0) { 
-        const predictions = model ? await model.detect(video, 12, 0.45) : [];
+      // Optimized for performance: skip more frames and use a lighter detection strategy
+      if (detectionCounter.current % 5 === 0) { 
+        // Offload detection to avoid blocking the main thread too long
+        const predictions = model ? await model.detect(video, 8, 0.5) : [];
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
         const currentDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
 
@@ -71,7 +73,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
         // Match existing tracks with new detections
         Object.entries(objectTracksRef.current).forEach(([trackId, track]) => {
           let bestMatchIndex = -1;
-          let maxIOU = 0.3; // Minimum threshold to consider a match
+          let maxIOU = 0.35; // Slightly higher threshold for better stability
 
           availableDetections.forEach((det, index) => {
             const [x1, y1, w1, h1] = track.bbox;
@@ -100,8 +102,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
                 lastSeen: now 
               };
             }
-          } else if (now - track.lastSeen < 500) {
-            // Keep track alive for a short while even if not detected (occlusion/missed frame)
+          } else if (now - track.lastSeen < 300) { // Reduced persistence to prevent "ghost" boxes
             updatedTracks[parseInt(trackId)] = track;
           }
         });
@@ -232,7 +233,7 @@ function Index() {
     async function loadModel() {
       try {
         const loadedModel = await cocoSsd.load({
-          base: 'mobilenet_v2' 
+          base: 'lite_mobilenet_v2' 
         });
         setModel(loadedModel);
       } catch (err) {

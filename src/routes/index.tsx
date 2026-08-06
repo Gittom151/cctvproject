@@ -36,6 +36,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(null);
+  const detectionCounter = useRef(0);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -47,33 +48,41 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
 
   const detectFrame = async () => {
     if (model && videoRef.current && videoRef.current.readyState === 4) {
-      const predictions = await model.detect(videoRef.current);
-      
-      // Filter for vehicles
-      const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
-      const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
-      
-      setDetections(vehicleDetections as Detection[]);
-      onDetection(id, vehicleDetections.map(v => v.class));
+      // Logic improvement: Skip frames if processing is slow to maintain stability
+      detectionCounter.current++;
+      if (detectionCounter.current % 2 === 0) {
+        const predictions = await model.detect(videoRef.current, 10, 0.4); // Limit max detections and confidence
+        
+        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
+        const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
+        
+        setDetections(vehicleDetections as Detection[]);
+        onDetection(id, vehicleDetections.map(v => v.class));
 
-      // Draw on canvas
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-          ctx.strokeStyle = '#3b82f6';
-          ctx.lineWidth = 2;
-          ctx.font = '10px Inter';
-          ctx.fillStyle = '#3b82f6';
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.font = 'bold 12px Inter';
+            ctx.fillStyle = '#3b82f6';
 
-          vehicleDetections.forEach(prediction => {
-            const [x, y, width, height] = prediction.bbox;
-            ctx.strokeRect(x, y, width, height);
-            ctx.fillText(
-              `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
-              x, y > 10 ? y - 5 : 10
-            );
-          });
+            vehicleDetections.forEach(prediction => {
+              const [x, y, width, height] = prediction.bbox;
+              // Visual optimization: Rounded rectangles for detections
+              ctx.beginPath();
+              ctx.roundRect(x, y, width, height, 4);
+              ctx.stroke();
+              
+              const label = `${prediction.class} ${Math.round(prediction.score * 100)}%`;
+              const textWidth = ctx.measureText(label).width;
+              ctx.fillStyle = '#3b82f6';
+              ctx.fillRect(x, y > 20 ? y - 20 : y, textWidth + 6, 20);
+              ctx.fillStyle = 'white';
+              ctx.fillText(label, x + 3, y > 20 ? y - 5 : y + 15);
+            });
+          }
         }
       }
     }

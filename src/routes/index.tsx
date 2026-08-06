@@ -54,7 +54,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
         const predictions = await model.detect(videoRef.current, 8, 0.5); 
 
         
-        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
+        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
         const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
         
         setDetections(vehicleDetections as Detection[]);

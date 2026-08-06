@@ -1,28 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef } from "react";
-import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
+import "@tensorflow/tfjs";
+import * as cocoSsd from "@tensorflow-models/coco-ssd";
 
 export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
-    title: "CCTV Monitoring System",
+    title: "ระบบตรวจสอบอุบัติเหตุ CCTV - AI Detection",
     meta: [
-      { name: "description", content: "AI-powered CCTV monitoring and incident detection dashboard." },
-      { property: "og:title", content: "CCTV Monitoring System" },
-      { property: "og:description", content: "Advanced 2x2 CCTV monitoring layout with real-time analytics." },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "description", content: "ระบบจำลอง CCTV พร้อม AI ตรวจจับรถยนต์และการเคลื่อนไหว" },
     ],
   }),
 });
 
-interface CCTVMonitorProps {
-  id: number;
+interface Detection {
+  bbox: [number, number, number, number];
+  class: string;
+  score: number;
 }
 
-function CCTVMonitor({ id }: CCTVMonitorProps) {
+interface CCTVMonitorProps {
+  id: number;
+  model: cocoSsd.ObjectDetection | null;
+  onDetection: (id: number, objects: string[]) => void;
+}
+
+function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [detections, setDetections] = useState<Detection[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const requestRef = useRef<number>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -32,16 +43,70 @@ function CCTVMonitor({ id }: CCTVMonitorProps) {
     }
   };
 
+  const detectFrame = async () => {
+    if (model && videoRef.current && videoRef.current.readyState === 4) {
+      const predictions = await model.detect(videoRef.current);
+      
+      // Filter for vehicles
+      const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
+      const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
+      
+      setDetections(vehicleDetections as Detection[]);
+      onDetection(id, vehicleDetections.map(v => v.class));
+
+      // Draw on canvas
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+          ctx.strokeStyle = '#3b82f6';
+          ctx.lineWidth = 2;
+          ctx.font = '10px Inter';
+          ctx.fillStyle = '#3b82f6';
+
+          vehicleDetections.forEach(prediction => {
+            const [x, y, width, height] = prediction.bbox;
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillText(
+              `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
+              x, y > 10 ? y - 5 : 10
+            );
+          });
+        }
+      }
+    }
+    requestRef.current = requestAnimationFrame(detectFrame);
+  };
+
+  useEffect(() => {
+    if (videoSrc && model) {
+      requestRef.current = requestAnimationFrame(detectFrame);
+    }
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, [videoSrc, model]);
+
   return (
-    <div className="relative group aspect-video bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex flex-center items-center justify-center transition-all hover:border-blue-500/50">
+    <div className="relative group aspect-video bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all hover:border-blue-500/50">
       {videoSrc ? (
-        <video
-          src={videoSrc}
-          autoPlay
-          muted
-          loop
-          className="w-full h-full object-cover"
-        />
+        <div className="relative w-full h-full">
+          <video
+            ref={videoRef}
+            src={videoSrc}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          <canvas
+            ref={canvasRef}
+            width={640}
+            height={360}
+            className="absolute top-0 left-0 w-full h-full pointer-events-none"
+          />
+        </div>
       ) : (
         <div 
           onClick={() => fileInputRef.current?.click()}
@@ -59,6 +124,12 @@ function CCTVMonitor({ id }: CCTVMonitorProps) {
         <span className="text-[10px] font-bold text-white uppercase tracking-wider">CAM-0{id}</span>
       </div>
 
+      {detections.length > 0 && (
+        <div className="absolute top-3 right-3 bg-blue-600/80 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] font-bold text-white">
+          DETECTED: {detections.length}
+        </div>
+      )}
+
       <input
         type="file"
         ref={fileInputRef}
@@ -66,21 +137,47 @@ function CCTVMonitor({ id }: CCTVMonitorProps) {
         accept="video/*"
         className="hidden"
       />
-      
-      {videoSrc && (
-        <button 
-          onClick={() => setVideoSrc(null)}
-          className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-red-900/40 text-white p-1.5 rounded-md border border-white/10"
-        >
-          <Upload className="w-4 h-4" />
-        </button>
-      )}
     </div>
   );
 }
 
 function Index() {
+  const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
+  const [isLoadingModel, setIsLoadingModel] = useState(true);
+  const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
+  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);
   const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false });
+
+  useEffect(() => {
+    async function loadModel() {
+      try {
+        const loadedModel = await cocoSsd.load();
+        setModel(loadedModel);
+      } catch (err) {
+        console.error("Failed to load AI model", err);
+      } finally {
+        setIsLoadingModel(false);
+      }
+    }
+    loadModel();
+  }, []);
+
+  const handleDetection = (id: number, objects: string[]) => {
+    setActiveDetections(prev => ({ ...prev, [id]: objects }));
+    
+    // Simple logic to simulate "accident" if many objects detected in one spot (placeholder)
+    if (objects.length > 5 && !incidents.find(i => i.cam === id)) {
+      const newIncident = {
+        id: Math.random().toString(36).substr(2, 9),
+        cam: id,
+        type: "ตรวจพบความหนาแน่นผิดปกติ",
+        time: new Date().toLocaleTimeString('en-US', { hour12: false })
+      };
+      setIncidents(prev => [newIncident, ...prev].slice(0, 5));
+    }
+  };
+
+  const totalVehicles = Object.values(activeDetections).reduce((acc, curr) => acc + curr.length, 0);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
@@ -97,9 +194,15 @@ function Index() {
         </div>
         
         <div className="flex items-center gap-6">
+          {isLoadingModel && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/20 rounded-md border border-blue-800/50">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping" />
+              <span className="text-[10px] font-bold text-blue-400 uppercase">กำลังโหลด AI Model...</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 rounded-md border border-neutral-800">
             <Activity className="w-3.5 h-3.5 text-green-500" />
-            <span className="text-xs font-mono text-neutral-400">สถานะระบบ: ปกติ</span>
+            <span className="text-xs font-mono text-neutral-400">สถานะระบบ: {model ? 'ปกติ' : 'เตรียมการ'}</span>
           </div>
           <div className="text-right">
             <div className="text-xs font-mono text-neutral-400 tracking-widest">{currentTime}</div>
@@ -114,19 +217,23 @@ function Index() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
               <LayoutGrid className="w-4 h-4 text-blue-500" />
-              <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">มุมมองกล้อง: 2x2</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">มุมมองกล้อง: 2x2 (AI Active)</h2>
             </div>
             <div className="flex gap-2">
                <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">บันทึกทั้งหมด</button>
-               <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">ควบคุม PTZ</button>
+               <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">ตั้งค่า AI</button>
             </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-6xl mx-auto">
-            <CCTVMonitor id={1} />
-            <CCTVMonitor id={2} />
-            <CCTVMonitor id={3} />
-            <CCTVMonitor id={4} />
+            {[1, 2, 3, 4].map(id => (
+              <CCTVMonitor 
+                key={id} 
+                id={id} 
+                model={model} 
+                onDetection={handleDetection}
+              />
+            ))}
           </div>
         </div>
 
@@ -139,25 +246,50 @@ function Index() {
           </div>
           
           <div className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto">
-            {/* Empty State / Placeholder for incidents */}
-            <div className="flex-1 flex flex-col items-center justify-center text-neutral-600 p-8 text-center">
-              <div className="w-12 h-12 rounded-full border border-dashed border-neutral-700 flex items-center justify-center mb-4">
-                <Camera className="w-6 h-6 opacity-20" />
+            {incidents.length > 0 ? (
+              <div className="space-y-3">
+                {incidents.map(incident => (
+                  <div key={incident.id} className="p-3 bg-red-950/20 border border-red-900/50 rounded-lg animate-in fade-in slide-in-from-right-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[10px] font-bold text-red-500 uppercase">Alert: CAM-0{incident.cam}</span>
+                      <span className="text-[9px] font-mono text-neutral-500">{incident.time}</span>
+                    </div>
+                    <p className="text-xs font-medium text-neutral-300">{incident.type}</p>
+                  </div>
+                ))}
               </div>
-              <p className="text-xs uppercase tracking-tighter font-semibold opacity-40">ไม่พบเหตุการณ์รถชน</p>
-              <p className="text-[10px] mt-1 leading-relaxed opacity-30">กำลังวิเคราะห์ภาพจากกล้องเพื่อตรวจหาความผิดปกติ อุบัติเหตุ และการบุกรุก</p>
-            </div>
-
-            {/* Placeholder Analytics Card */}
-            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800/50">
-              <h3 className="text-[10px] font-bold text-neutral-500 uppercase mb-3">ความหนาแน่นของการจราจร</h3>
-              <div className="space-y-2">
-                <div className="h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 w-1/3 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-neutral-600 p-8 text-center">
+                <div className="w-12 h-12 rounded-full border border-dashed border-neutral-700 flex items-center justify-center mb-4">
+                  <Camera className="w-6 h-6 opacity-20" />
                 </div>
-                <div className="flex justify-between text-[10px] font-mono text-neutral-500">
-                  <span>โซน A</span>
-                  <span>น้อย</span>
+                <p className="text-xs uppercase tracking-tighter font-semibold opacity-40">ไม่พบเหตุการณ์ผิดปกติ</p>
+                <p className="text-[10px] mt-1 leading-relaxed opacity-30">กำลังวิเคราะห์ภาพจากกล้องเพื่อตรวจหาความผิดปกติ อุบัติเหตุ และการบุกรุก</p>
+              </div>
+            )}
+
+            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800/50">
+              <h3 className="text-[10px] font-bold text-neutral-500 uppercase mb-3">สถิติการตรวจจับ</h3>
+              <div className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-neutral-500 uppercase font-bold">พาหนะทั้งหมด</p>
+                    <p className="text-2xl font-mono font-bold text-blue-500">{totalVehicles}</p>
+                  </div>
+                  <Box className="w-8 h-8 text-neutral-800" />
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" 
+                      style={{ width: `${Math.min(totalVehicles * 10, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] font-mono text-neutral-500 uppercase">
+                    <span>Traffic Load</span>
+                    <span>{totalVehicles > 10 ? 'High' : totalVehicles > 0 ? 'Medium' : 'Low'}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -165,10 +297,23 @@ function Index() {
             <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800/50">
               <div className="flex items-center gap-2 text-amber-500/50 mb-3">
                 <AlertCircle className="w-3 h-3" />
-                <h3 className="text-[10px] font-bold uppercase">การแจ้งเตือนระบบ</h3>
+                <h3 className="text-[10px] font-bold uppercase">สถานะ AI Model</h3>
               </div>
-              <div className="text-[10px] font-mono text-neutral-600 italic">
-                รอรับข้อมูลวิเคราะห์...
+              <div className="text-[10px] font-mono text-neutral-400">
+                {model ? (
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span>MODEL:</span>
+                      <span className="text-blue-400">COCO-SSD</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>BACKEND:</span>
+                      <span className="text-blue-400">TF.JS/WEBGL</span>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="italic text-neutral-600">กำลังเชื่อมต่อฐานข้อมูล...</span>
+                )}
               </div>
             </div>
           </div>
@@ -176,7 +321,7 @@ function Index() {
           <div className="p-4 bg-black/40 border-t border-neutral-800">
              <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500">
                 <span>ENCRYPTION</span>
-                <span className="text-green-900 font-bold">AES-256</span>
+                <span className="text-green-900 font-bold uppercase">Secured</span>
              </div>
           </div>
         </aside>

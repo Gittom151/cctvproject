@@ -351,7 +351,7 @@ function Index() {
              <div className="p-3 bg-blue-600/5 rounded border border-blue-500/10">
                <p className="text-[10px] text-blue-400 font-bold uppercase mb-2">Note จากผู้พัฒนา</p>
                <p className="text-[10px] leading-relaxed text-neutral-400">
-                 "ระบบตรวจจับยังไม่เเม่นยำมากพอ ทำให้เเม่นยำมากกว่านี้ พอเจอรถไปเยอะๆ มันจะเอ๋อนี่ตัวอย่างคลิป คุณเอาไปเทรนเเละเขียนโลจิกเอไอได้เลย"
+                 "ระบบประมวลผลช้าเกินไป โหลดaiนานมาก"
                </p>
              </div>
           </div>

@@ -122,7 +122,7 @@ function Index() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-6xl mx-auto">
             <CCTVMonitor id={1} />
             <CCTVMonitor id={2} />
             <CCTVMonitor id={3} />

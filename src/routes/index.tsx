@@ -193,10 +193,12 @@ function Index() {
     
     // Logic: alert only when traffic is high (> 5 vehicles)
     if (objects.length > 5) {
-      const existingIncident = incidents.find(i => i.cam === id);
-      
-      // If no active incident for this camera, create one
-      if (!existingIncident) {
+      setIncidents(prev => {
+        const existingIncident = prev.find(i => i.cam === id);
+        
+        // If an incident for this camera already exists, do nothing (prevent spam)
+        if (existingIncident) return prev;
+
         const incidentId = Math.random().toString(36).substr(2, 9);
         const newIncident = {
           id: incidentId,
@@ -205,13 +207,13 @@ function Index() {
           time: new Date().toLocaleTimeString('en-US', { hour12: false })
         };
         
-        setIncidents(prev => [newIncident, ...prev].slice(0, 5));
-
-        // Auto-remove after 15 seconds
+        // Add new incident and ensure it's removed after 15 seconds
         setTimeout(() => {
-          setIncidents(prev => prev.filter(i => i.id !== incidentId));
+          setIncidents(current => current.filter(i => i.id !== incidentId));
         }, 15000);
-      }
+
+        return [newIncident, ...prev].slice(0, 5);
+      });
     }
   };
 

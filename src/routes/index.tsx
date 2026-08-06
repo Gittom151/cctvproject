@@ -191,15 +191,27 @@ function Index() {
   const handleDetection = (id: number, objects: string[]) => {
     setActiveDetections(prev => ({ ...prev, [id]: objects }));
     
-    // Simple logic to simulate "accident" if many objects detected in one spot (placeholder)
-    if (objects.length > 5 && !incidents.find(i => i.cam === id)) {
-      const newIncident = {
-        id: Math.random().toString(36).substr(2, 9),
-        cam: id,
-        type: "ตรวจพบความหนาแน่นผิดปกติ",
-        time: new Date().toLocaleTimeString('en-US', { hour12: false })
-      };
-      setIncidents(prev => [newIncident, ...prev].slice(0, 5));
+    // Logic: alert only when traffic is high (> 5 vehicles)
+    if (objects.length > 5) {
+      const existingIncident = incidents.find(i => i.cam === id);
+      
+      // If no active incident for this camera, create one
+      if (!existingIncident) {
+        const incidentId = Math.random().toString(36).substr(2, 9);
+        const newIncident = {
+          id: incidentId,
+          cam: id,
+          type: "ตรวจพบความหนาแน่นผิดปกติ",
+          time: new Date().toLocaleTimeString('en-US', { hour12: false })
+        };
+        
+        setIncidents(prev => [newIncident, ...prev].slice(0, 5));
+
+        // Auto-remove after 15 seconds
+        setTimeout(() => {
+          setIncidents(prev => prev.filter(i => i.id !== incidentId));
+        }, 15000);
+      }
     }
   };
 

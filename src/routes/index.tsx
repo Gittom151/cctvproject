@@ -162,7 +162,9 @@ function Index() {
   useEffect(() => {
     async function loadModel() {
       try {
-        const loadedModel = await cocoSsd.load();
+        const loadedModel = await cocoSsd.load({
+          base: 'mobilenet_v2' // Faster and more stable for high traffic detection
+        });
         setModel(loadedModel);
       } catch (err) {
         console.error("Failed to load AI model", err);

@@ -50,8 +50,9 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
     if (model && videoRef.current && videoRef.current.readyState === 4) {
       // Logic improvement: Skip frames if processing is slow to maintain stability
       detectionCounter.current++;
-      if (detectionCounter.current % 2 === 0) {
-        const predictions = await model.detect(videoRef.current, 10, 0.4); // Limit max detections and confidence
+      if (detectionCounter.current % 4 === 0) { 
+        const predictions = await model.detect(videoRef.current, 8, 0.5); 
+
         
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle'];
         const vehicleDetections = predictions.filter(p => vehicleClasses.includes(p.class));
@@ -163,7 +164,7 @@ function Index() {
     async function loadModel() {
       try {
         const loadedModel = await cocoSsd.load({
-          base: 'mobilenet_v2' // Faster and more stable for high traffic detection
+          base: 'lite_mobilenet_v2' 
         });
         setModel(loadedModel);
       } catch (err) {
@@ -348,12 +349,6 @@ function Index() {
                 <span className="text-green-900 font-bold uppercase">Secured</span>
              </div>
              
-             <div className="p-3 bg-blue-600/5 rounded border border-blue-500/10">
-               <p className="text-[10px] text-blue-400 font-bold uppercase mb-2">Note จากผู้พัฒนา</p>
-               <p className="text-[10px] leading-relaxed text-neutral-400">
-                 "ระบบประมวลผลช้าเกินไป โหลดaiนานมาก"
-               </p>
-             </div>
           </div>
         </aside>
       </main>

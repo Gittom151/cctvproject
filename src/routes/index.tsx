@@ -194,6 +194,17 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
+      {/* User Instruction Banner */}
+      <div className="bg-blue-600/10 border-b border-blue-500/20 py-2 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-blue-400">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-xs font-medium">ระบบกำลังปรับปรุงความแม่นยำด้วยตัวอย่างคลิปวิดีโอที่คุณส่งมา</span>
+        </div>
+        <div className="text-[10px] text-neutral-500 font-mono">
+          STATUS: OPTIMIZING LOGIC
+        </div>
+      </div>
+
       {/* Header */}
       <header className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center gap-3">

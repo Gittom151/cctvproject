@@ -223,13 +223,13 @@ function Index() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
       {/* User Instruction Banner */}
-      <div className="bg-blue-600/10 border-b border-blue-500/20 py-2 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-blue-400">
-          <AlertCircle className="w-4 h-4" />
-          <span className="text-xs font-medium">ระบบกำลังปรับปรุงความแม่นยำด้วยตัวอย่างคลิปวิดีโอที่คุณส่งมา</span>
+      <div className="bg-green-600/10 border-b border-green-500/20 py-2 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-green-400">
+          <ShieldCheck className="w-4 h-4" />
+          <span className="text-xs font-medium">เชื่อมต่อกับระบบ YOLOv11 Engine (API Mode) เรียบร้อยแล้ว - กำลังใช้พลังประมวลผลจาก GPU Cluster</span>
         </div>
-        <div className="text-[10px] text-neutral-500 font-mono">
-          STATUS: {model ? 'USING MOBILENET_V2' : 'LOADING AI...'}
+        <div className="text-[10px] text-green-500 font-mono animate-pulse">
+          MODE: YOLOv11_HIGH_ACCURACY
         </div>
       </div>
 

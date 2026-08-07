@@ -31,7 +31,7 @@ interface CCTVMonitorProps {
   onToggleExpand: (id: number) => void;
 }
 
-function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
+function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCTVMonitorProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);

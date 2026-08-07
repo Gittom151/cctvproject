@@ -232,6 +232,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
 
 function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
+  const [expandedCam, setExpandedCam] = useState<number | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
   const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);

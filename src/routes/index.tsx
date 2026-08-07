@@ -27,9 +27,11 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
+  isExpanded: boolean;
+  onToggleExpand: (id: number) => void;
 }
 
-function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
+function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCTVMonitorProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -168,7 +170,13 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   }, [videoSrc]);
 
   return (
-    <div className="relative group aspect-video bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all hover:border-blue-500/50">
+    <div 
+      onClick={() => onToggleExpand(id)}
+      className={cn(
+        "relative group bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all duration-500 cursor-pointer",
+        isExpanded ? "fixed inset-10 z-[100] shadow-[0_0_100px_rgba(0,0,0,0.8)] border-blue-500/30" : "aspect-video hover:border-blue-500/50"
+      )}
+    >
       {videoSrc ? (
         <div className="relative w-full h-full">
           <video
@@ -224,6 +232,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
 
 function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
+  const [expandedCam, setExpandedCam] = useState<number | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
   const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);
@@ -354,9 +363,18 @@ function Index() {
                 id={id} 
                 model={model} 
                 onDetection={handleDetection}
+                isExpanded={expandedCam === id}
+                onToggleExpand={(camId) => setExpandedCam(expandedCam === camId ? null : camId)}
               />
             ))}
           </div>
+
+          {expandedCam && (
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] animate-in fade-in"
+              onClick={() => setExpandedCam(null)}
+            />
+          )}
         </div>
 
         {/* Right Side: Dashboard */}

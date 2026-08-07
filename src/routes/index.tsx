@@ -363,9 +363,18 @@ function Index() {
                 id={id} 
                 model={model} 
                 onDetection={handleDetection}
+                isExpanded={expandedCam === id}
+                onToggleExpand={(camId) => setExpandedCam(expandedCam === camId ? null : camId)}
               />
             ))}
           </div>
+
+          {expandedCam && (
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] animate-in fade-in"
+              onClick={() => setExpandedCam(null)}
+            />
+          )}
         </div>
 
         {/* Right Side: Dashboard */}

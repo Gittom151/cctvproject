@@ -277,27 +277,30 @@ function Index() {
   const totalVehicles = Object.values(activeDetections).reduce((acc, curr) => acc + curr.length, 0);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
-      {/* User Instruction Banner */}
-      <div className="bg-green-600/10 border-b border-green-500/20 py-2 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-green-400">
-          <ShieldCheck className="w-4 h-4" />
-          <span className="text-xs font-medium">เชื่อมต่อกับระบบ YOLOv11 Engine (API Mode) เรียบร้อยแล้ว - กำลังใช้พลังประมวลผลจาก GPU Cluster</span>
+    <div className="min-h-screen bg-[#050505] text-neutral-200 font-sans selection:bg-blue-500/30">
+      {/* Banner: Status */}
+      <div className="bg-blue-500/5 border-b border-white/5 py-1.5 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-blue-400/80">
+          <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+          <span className="text-[10px] font-medium tracking-wide uppercase">YOLOv11 Engine Connected • GPU Cluster Active</span>
         </div>
-        <div className="text-[10px] text-green-500 font-mono animate-pulse">
-          MODE: YOLOv11_HIGH_ACCURACY
+        <div className="text-[9px] text-neutral-500 font-mono">
+          v11.4.2-stable
         </div>
       </div>
 
       {/* Header */}
-      <header className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/20">
-            <ShieldCheck className="w-5 h-5 text-white" />
+      <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-black/40 backdrop-blur-2xl sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
+              <ShieldCheck className="w-6 h-6 text-white" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-[#050505] rounded-full" />
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-tight text-white uppercase">ระบบตรวจสอบอุบัติเหตุ CCTV</h1>
-            <p className="text-[10px] text-neutral-500 font-medium">ระบบปัญญาประดิษฐ์เฝ้าระวัง 24 ชม.</p>
+            <h1 className="text-base font-bold tracking-tight text-white">SENTINEL AI</h1>
+            <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-[0.2em]">CCTV Detection System</p>
           </div>
         </div>
         

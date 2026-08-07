@@ -398,40 +398,38 @@ function Index() {
             )}
 
 
-            <div className="p-4 rounded-xl bg-blue-900/10 border border-blue-500/20">
-              <div className="flex items-center gap-2 text-blue-500 mb-3">
-                <Box className="w-3 h-3" />
-                <h3 className="text-[10px] font-bold uppercase tracking-widest">YOLOv11 API Connection</h3>
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-600/10 to-transparent border border-blue-500/20 shadow-xl shadow-blue-500/5">
+              <div className="flex items-center gap-3 text-blue-400 mb-5">
+                <Box className="w-4 h-4" />
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]">YOLOv11 API INFRA</h3>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-neutral-500">ENDPOINT:</span>
-                  <span className="text-blue-400">api.cctv-ai.cloud/v1/detect</span>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Gateway Endpoint</span>
+                  <span className="text-[11px] font-mono text-blue-400 truncate">api.sentinel-ai.cloud/v1/live</span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-neutral-500">LATENCY:</span>
-                  <span className="text-green-500">24ms</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-neutral-500">ACCURACY:</span>
-                  <span className="text-blue-400">98.4%</span>
-                </div>
-                <div className="pt-2 border-t border-blue-500/10">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-[9px] text-green-500 font-bold uppercase">Connected to GPU Cluster</span>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Latency</span>
+                    <span className="text-xs font-mono text-green-500">24ms</span>
                   </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Accuracy</span>
+                    <span className="text-xs font-mono text-blue-400">98.4%</span>
+                  </div>
+                </div>
+                <div className="pt-4 border-t border-white/5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">GPU Cluster: ONLINE</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="w-[65%] h-full bg-blue-500 rounded-full shadow-[0_0_12px_rgba(59,130,246,0.4)]" />
+                  </div>
+                  <p className="text-[9px] text-neutral-600 mt-2 font-medium uppercase tracking-tighter">Load: 65.2% (RTX 4090 x 8)</p>
                 </div>
               </div>
             </div>
-          </div>
-
-          <div className="p-4 bg-black/40 border-t border-neutral-800 space-y-4">
-             <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500">
-                <span>ENCRYPTION</span>
-                <span className="text-green-900 font-bold uppercase">Secured</span>
-             </div>
-             
           </div>
         </aside>
       </main>

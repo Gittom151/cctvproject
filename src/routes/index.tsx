@@ -62,7 +62,10 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
       // Optimized for high-speed tracking: detect every 3 frames instead of 5
       if (detectionCounter.current % 3 === 0) { 
         const predictions = model ? await model.detect(video, 10, 0.45) : [];
-        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
+        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle'];
+        
+        // ACCIDENT DETECTION LOGIC (Simplified for now: filter by movement/overlap)
+        // In a real scenario, this would check for sudden deceleration or directional changes
         const currentDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
 
         // 2. Advanced Object Tracking Logic (IOU + Multi-Scale Matching)
@@ -289,13 +292,13 @@ function Index() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
       {/* User Instruction Banner */}
-      <div className="bg-green-600/10 border-b border-green-500/20 py-2 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-green-400">
-          <ShieldCheck className="w-4 h-4" />
-          <span className="text-xs font-medium">เชื่อมต่อกับระบบ YOLOv11 Engine (API Mode) เรียบร้อยแล้ว - กำลังใช้พลังประมวลผลจาก GPU Cluster</span>
+      <div className="bg-red-600/10 border-b border-red-500/20 py-2 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-red-400">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-xs font-medium">อันนี้คือตรวจอย่างคลิปรถชน ต่อไปจะไม่ให้ai ตรวจจับรถทุกคันเเต่จะให้มันตรวจจับรถที่เกิดอุบัติเหตุเท่านั้นเเละส่งเเจ้งเตือน</span>
         </div>
-        <div className="text-[10px] text-green-500 font-mono animate-pulse">
-          MODE: YOLOv11_HIGH_ACCURACY
+        <div className="text-[10px] text-red-500 font-mono animate-pulse">
+          MODE: ACCIDENT_DETECTION_ONLY
         </div>
       </div>
 

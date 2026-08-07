@@ -330,19 +330,24 @@ function Index() {
 
       <main className="flex h-[calc(100vh-4rem)]">
         {/* Left Side: CCTV Grid */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <LayoutGrid className="w-4 h-4 text-blue-500" />
-              <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">มุมมองกล้อง: 2x2 (AI Active)</h2>
+        <div className="flex-1 p-8 overflow-y-auto">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/10 rounded-lg">
+                <LayoutGrid className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-[0.1em] text-white">Live Monitors</h2>
+                <p className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">4 Active Channels • AI-Assisted</p>
+              </div>
             </div>
-            <div className="flex gap-2">
-               <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">บันทึกทั้งหมด</button>
-               <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">ตั้งค่า AI</button>
+            <div className="flex gap-3">
+               <button className="h-9 px-4 bg-neutral-900/50 hover:bg-neutral-800 border border-white/5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all">Export Footage</button>
+               <button className="h-9 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-blue-500/20">AI Settings</button>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-7xl mx-auto">
             {[1, 2, 3, 4].map(id => (
               <CCTVMonitor 
                 key={id} 

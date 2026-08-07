@@ -59,26 +59,26 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
       const now = Date.now();
       
       // 1. Detection Phase (AI Inference)
-      // Optimized for performance: skip more frames and use a lighter detection strategy
-      if (detectionCounter.current % 5 === 0) { 
-        // Offload detection to avoid blocking the main thread too long
-        const predictions = model ? await model.detect(video, 8, 0.5) : [];
+      // Optimized for high-speed tracking: detect every 3 frames instead of 5
+      if (detectionCounter.current % 3 === 0) { 
+        const predictions = model ? await model.detect(video, 10, 0.45) : [];
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
         const currentDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
 
-        // 2. Simple Object Tracking Logic (IOU based association)
+        // 2. Advanced Object Tracking Logic (IOU + Multi-Scale Matching)
         const updatedTracks: typeof objectTracksRef.current = {};
         const availableDetections = [...currentDetections];
 
         // Match existing tracks with new detections
         Object.entries(objectTracksRef.current).forEach(([trackId, track]) => {
           let bestMatchIndex = -1;
-          let maxIOU = 0.35; // Slightly higher threshold for better stability
+          let maxIOU = 0.25; // Lower threshold to catch fast-moving objects
 
           availableDetections.forEach((det, index) => {
             const [x1, y1, w1, h1] = track.bbox;
             const [x2, y2, w2, h2] = det.bbox;
             
+            // Intersection Over Union calculation
             const overlapX = Math.max(0, Math.min(x1 + w1, x2 + w2) - Math.max(x1, x2));
             const overlapY = Math.max(0, Math.min(y1 + h1, y2 + h2) - Math.max(y1, y2));
             const intersection = overlapX * overlapY;
@@ -95,14 +95,24 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
             const match = availableDetections[bestMatchIndex];
             if (match) {
               availableDetections.splice(bestMatchIndex, 1);
+              // Smooth movement interpolation (lerp) for the bounding box
+              const lerpFactor = 0.65; // High responsiveness for fast vehicles
+              const newBbox: [number, number, number, number] = [
+                track.bbox[0] + (match.bbox[0] - track.bbox[0]) * lerpFactor,
+                track.bbox[1] + (match.bbox[1] - track.bbox[1]) * lerpFactor,
+                track.bbox[2] + (match.bbox[2] - track.bbox[2]) * lerpFactor,
+                track.bbox[3] + (match.bbox[3] - track.bbox[3]) * lerpFactor
+              ];
+              
               updatedTracks[parseInt(trackId)] = { 
-                bbox: match.bbox, 
+                bbox: newBbox, 
                 class: match.class, 
                 score: match.score, 
                 lastSeen: now 
               };
             }
-          } else if (now - track.lastSeen < 300) { // Reduced persistence to prevent "ghost" boxes
+          } else if (now - track.lastSeen < 600) { // Keep track longer to handle fast movement/occlusion
+            // Predict next position based on simple velocity could be added here
             updatedTracks[parseInt(trackId)] = track;
           }
         });

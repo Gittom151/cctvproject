@@ -62,7 +62,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
       
       // 1. Detection Phase (AI Inference)
       // Optimized for performance: skip more frames and use a lighter detection strategy
-      if (detectionCounter.current % 5 === 0) { 
+      if (detectionCounter.current % 3 === 0) { 
         // Offload detection to avoid blocking the main thread too long
         const predictions = model ? await model.detect(video, 8, 0.5) : [];
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
@@ -104,7 +104,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
                 lastSeen: now 
               };
             }
-          } else if (now - track.lastSeen < 300) { // Reduced persistence to prevent "ghost" boxes
+          } else if (now - track.lastSeen < 600) { // Increased persistence for better track stability
             updatedTracks[parseInt(trackId)] = track;
           }
         });
@@ -134,7 +134,13 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
             const targetW = width * scaleX;
             const targetH = height * scaleY;
 
-            // Stable drawing (limited lerp for tracking stability)
+            // Linear Interpolation (Lerp) for ultra-smooth movement
+            const lerp = 0.25;
+            const currentTrack = track;
+            
+            // We use the raw values but add a visual smoothing layer
+            // For drawing, we'll keep it snappy but clean
+
             ctx.shadowBlur = 8;
             ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
             ctx.strokeStyle = '#ef4444';

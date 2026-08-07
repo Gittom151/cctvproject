@@ -360,33 +360,40 @@ function Index() {
         </div>
 
         {/* Right Side: Dashboard */}
-        <aside className="w-80 border-l border-neutral-800 bg-neutral-900/30 flex flex-col">
-          <div className="p-4 border-b border-neutral-800">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-500 flex items-center gap-2">
-              <Activity className="w-3 h-3" /> รายงานเหตุการณ์
+        <aside className="w-96 border-l border-white/5 bg-[#080808] flex flex-col">
+          <div className="p-6 border-b border-white/5">
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-400 flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-blue-500" /> Activity Log
             </h2>
           </div>
           
-          <div className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto">
+          <div className="flex-1 p-6 flex flex-col gap-6 overflow-y-auto">
             {incidents.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {incidents.map(incident => (
-                  <div key={incident.id} className="p-3 bg-red-950/20 border border-red-900/50 rounded-lg animate-in fade-in slide-in-from-right-4">
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="text-[10px] font-bold text-red-500 uppercase">Alert: CAM-0{incident.cam}</span>
-                      <span className="text-[9px] font-mono text-neutral-500">{incident.time}</span>
+                  <div key={incident.id} className="group relative p-4 bg-red-500/5 border border-red-500/10 rounded-xl transition-all hover:bg-red-500/10 hover:border-red-500/20 animate-in fade-in slide-in-from-right-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                        <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Alert: CAM-0{incident.cam}</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-neutral-500">{incident.time}</span>
                     </div>
-                    <p className="text-xs font-medium text-neutral-300">{incident.type}</p>
+                    <p className="text-xs font-bold text-neutral-200 uppercase tracking-tight">{incident.type}</p>
+                    <div className="mt-3 flex gap-2">
+                      <button className="text-[9px] font-bold uppercase tracking-widest text-red-400 hover:text-red-300 transition-colors">View Clip</button>
+                      <button className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 hover:text-neutral-400 transition-colors">Dismiss</button>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-neutral-600 p-8 text-center">
-                <div className="w-12 h-12 rounded-full border border-dashed border-neutral-700 flex items-center justify-center mb-4">
-                  <Camera className="w-6 h-6 opacity-20" />
+                <div className="w-16 h-16 rounded-2xl bg-neutral-900 flex items-center justify-center mb-6 shadow-inner border border-white/5">
+                  <Camera className="w-8 h-8 opacity-20" />
                 </div>
-                <p className="text-xs uppercase tracking-tighter font-semibold opacity-40">ไม่พบเหตุการณ์ผิดปกติ</p>
-                <p className="text-[10px] mt-1 leading-relaxed opacity-30">กำลังวิเคราะห์ภาพจากกล้องเพื่อตรวจหาความผิดปกติ อุบัติเหตุ และการบุกรุก</p>
+                <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400 mb-2">System Clear</p>
+                <p className="text-[11px] leading-relaxed opacity-40 max-w-[200px]">AI models are currently scanning all feeds for suspicious activity.</p>
               </div>
             )}
 

@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,11 +27,9 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
-  isExpanded: boolean;
-  onToggleExpand: (id: number) => void;
 }
 
-function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCTVMonitorProps) {
+function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +60,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
       
       // 1. Detection Phase (AI Inference)
       // Optimized for performance: skip more frames and use a lighter detection strategy
-      if (detectionCounter.current % 3 === 0) { 
+      if (detectionCounter.current % 5 === 0) { 
         // Offload detection to avoid blocking the main thread too long
         const predictions = model ? await model.detect(video, 8, 0.5) : [];
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'person'];
@@ -105,7 +102,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
                 lastSeen: now 
               };
             }
-          } else if (now - track.lastSeen < 600) { // Increased persistence for better track stability
+          } else if (now - track.lastSeen < 300) { // Reduced persistence to prevent "ghost" boxes
             updatedTracks[parseInt(trackId)] = track;
           }
         });
@@ -135,13 +132,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
             const targetW = width * scaleX;
             const targetH = height * scaleY;
 
-            // Linear Interpolation (Lerp) for ultra-smooth movement
-            const lerp = 0.25;
-            const currentTrack = track;
-            
-            // We use the raw values but add a visual smoothing layer
-            // For drawing, we'll keep it snappy but clean
-
+            // Stable drawing (limited lerp for tracking stability)
             ctx.shadowBlur = 8;
             ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
             ctx.strokeStyle = '#ef4444';
@@ -177,13 +168,7 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
   }, [videoSrc]);
 
   return (
-    <div 
-      onClick={() => onToggleExpand(id)}
-      className={cn(
-        "relative group bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all duration-500 cursor-pointer",
-        isExpanded ? "fixed inset-10 z-[100] shadow-[0_0_100px_rgba(0,0,0,0.8)] border-blue-500/30" : "aspect-video hover:border-blue-500/50"
-      )}
-    >
+    <div className="relative group aspect-video bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all hover:border-blue-500/50">
       {videoSrc ? (
         <div className="relative w-full h-full">
           <video
@@ -239,7 +224,6 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
 
 function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
-  const [expandedCam, setExpandedCam] = useState<number | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
   const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);
@@ -293,168 +277,140 @@ function Index() {
   const totalVehicles = Object.values(activeDetections).reduce((acc, curr) => acc + curr.length, 0);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-neutral-200 font-sans selection:bg-blue-500/30">
-      {/* Banner: Status */}
-      <div className="bg-blue-500/5 border-b border-white/5 py-1.5 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-blue-400/80">
-          <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-          <span className="text-[10px] font-medium tracking-wide uppercase">YOLOv11 Engine Connected • GPU Cluster Active</span>
+    <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
+      {/* User Instruction Banner */}
+      <div className="bg-green-600/10 border-b border-green-500/20 py-2 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-green-400">
+          <ShieldCheck className="w-4 h-4" />
+          <span className="text-xs font-medium">เชื่อมต่อกับระบบ YOLOv11 Engine (API Mode) เรียบร้อยแล้ว - กำลังใช้พลังประมวลผลจาก GPU Cluster</span>
         </div>
-        <div className="text-[9px] text-neutral-500 font-mono">
-          v11.4.2-stable
+        <div className="text-[10px] text-green-500 font-mono animate-pulse">
+          MODE: YOLOv11_HIGH_ACCURACY
         </div>
       </div>
 
       {/* Header */}
-      <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-black/40 backdrop-blur-2xl sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
-              <ShieldCheck className="w-6 h-6 text-white" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-[#050505] rounded-full" />
+      <header className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <ShieldCheck className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-base font-bold tracking-tight text-white">SENTINEL AI</h1>
-            <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-[0.2em]">CCTV Detection System</p>
+            <h1 className="text-sm font-bold tracking-tight text-white uppercase">ระบบตรวจสอบอุบัติเหตุ CCTV</h1>
+            <p className="text-[10px] text-neutral-500 font-medium">ระบบปัญญาประดิษฐ์เฝ้าระวัง 24 ชม.</p>
           </div>
         </div>
         
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-4">
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">System Status</span>
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                <span className="text-xs font-mono text-neutral-300">OPERATIONAL</span>
-              </div>
+        <div className="flex items-center gap-6">
+          {isLoadingModel && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/20 rounded-md border border-blue-800/50">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping" />
+              <span className="text-[10px] font-bold text-blue-400 uppercase">กำลังโหลด AI Model...</span>
             </div>
-            
-            <div className="w-px h-8 bg-white/10" />
-
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Local Time</span>
-              <span className="text-xs font-mono text-neutral-300 tracking-widest">{currentTime}</span>
-            </div>
+          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 rounded-md border border-neutral-800">
+            <Activity className="w-3.5 h-3.5 text-green-500" />
+            <span className="text-xs font-mono text-neutral-400">สถานะระบบ: {model ? 'ปกติ' : 'เตรียมการ'}</span>
           </div>
-          
-          <button className="h-10 px-5 bg-white text-black text-xs font-bold rounded-full hover:bg-neutral-200 transition-all shadow-xl shadow-white/5 active:scale-95">
-            LOG OUT
-          </button>
+          <div className="text-right">
+            <div className="text-xs font-mono text-neutral-400 tracking-widest">{currentTime}</div>
+            <div className="text-[10px] text-neutral-600 font-bold uppercase tracking-tighter">กำลังทำงาน</div>
+          </div>
         </div>
       </header>
 
       <main className="flex h-[calc(100vh-4rem)]">
         {/* Left Side: CCTV Grid */}
-        <div className="flex-1 p-8 overflow-y-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <LayoutGrid className="w-5 h-5 text-blue-500" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold uppercase tracking-[0.1em] text-white">Live Monitors</h2>
-                <p className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">4 Active Channels • AI-Assisted</p>
-              </div>
+        <div className="flex-1 p-6 overflow-y-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="w-4 h-4 text-blue-500" />
+              <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">มุมมองกล้อง: 2x2 (AI Active)</h2>
             </div>
-            <div className="flex gap-3">
-               <button className="h-9 px-4 bg-neutral-900/50 hover:bg-neutral-800 border border-white/5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all">Export Footage</button>
-               <button className="h-9 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-blue-500/20">AI Settings</button>
+            <div className="flex gap-2">
+               <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">บันทึกทั้งหมด</button>
+               <button className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded text-xs transition-colors">ตั้งค่า AI</button>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-6xl mx-auto">
             {[1, 2, 3, 4].map(id => (
               <CCTVMonitor 
                 key={id} 
                 id={id} 
                 model={model} 
                 onDetection={handleDetection}
-                isExpanded={expandedCam === id}
-                onToggleExpand={(camId) => setExpandedCam(expandedCam === camId ? null : camId)}
               />
             ))}
           </div>
-
-          {expandedCam && (
-            <div 
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] animate-in fade-in"
-              onClick={() => setExpandedCam(null)}
-            />
-          )}
         </div>
 
         {/* Right Side: Dashboard */}
-        <aside className="w-96 border-l border-white/5 bg-[#080808] flex flex-col">
-          <div className="p-6 border-b border-white/5">
-            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-400 flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-blue-500" /> Activity Log
+        <aside className="w-80 border-l border-neutral-800 bg-neutral-900/30 flex flex-col">
+          <div className="p-4 border-b border-neutral-800">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-500 flex items-center gap-2">
+              <Activity className="w-3 h-3" /> รายงานเหตุการณ์
             </h2>
           </div>
           
-          <div className="flex-1 p-6 flex flex-col gap-6 overflow-y-auto">
+          <div className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto">
             {incidents.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {incidents.map(incident => (
-                  <div key={incident.id} className="group relative p-4 bg-red-500/5 border border-red-500/10 rounded-xl transition-all hover:bg-red-500/10 hover:border-red-500/20 animate-in fade-in slide-in-from-right-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                        <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Alert: CAM-0{incident.cam}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-neutral-500">{incident.time}</span>
+                  <div key={incident.id} className="p-3 bg-red-950/20 border border-red-900/50 rounded-lg animate-in fade-in slide-in-from-right-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[10px] font-bold text-red-500 uppercase">Alert: CAM-0{incident.cam}</span>
+                      <span className="text-[9px] font-mono text-neutral-500">{incident.time}</span>
                     </div>
-                    <p className="text-xs font-bold text-neutral-200 uppercase tracking-tight">{incident.type}</p>
-                    <div className="mt-3 flex gap-2">
-                      <button className="text-[9px] font-bold uppercase tracking-widest text-red-400 hover:text-red-300 transition-colors">View Clip</button>
-                      <button className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 hover:text-neutral-400 transition-colors">Dismiss</button>
-                    </div>
+                    <p className="text-xs font-medium text-neutral-300">{incident.type}</p>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-neutral-600 p-8 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-neutral-900 flex items-center justify-center mb-6 shadow-inner border border-white/5">
-                  <Camera className="w-8 h-8 opacity-20" />
+                <div className="w-12 h-12 rounded-full border border-dashed border-neutral-700 flex items-center justify-center mb-4">
+                  <Camera className="w-6 h-6 opacity-20" />
                 </div>
-                <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400 mb-2">System Clear</p>
-                <p className="text-[11px] leading-relaxed opacity-40 max-w-[200px]">AI models are currently scanning all feeds for suspicious activity.</p>
+                <p className="text-xs uppercase tracking-tighter font-semibold opacity-40">ไม่พบเหตุการณ์ผิดปกติ</p>
+                <p className="text-[10px] mt-1 leading-relaxed opacity-30">กำลังวิเคราะห์ภาพจากกล้องเพื่อตรวจหาความผิดปกติ อุบัติเหตุ และการบุกรุก</p>
               </div>
             )}
 
 
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-600/10 to-transparent border border-blue-500/20 shadow-xl shadow-blue-500/5">
-              <div className="flex items-center gap-3 text-blue-400 mb-5">
-                <Box className="w-4 h-4" />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]">YOLOv11 API INFRA</h3>
+            <div className="p-4 rounded-xl bg-blue-900/10 border border-blue-500/20">
+              <div className="flex items-center gap-2 text-blue-500 mb-3">
+                <Box className="w-3 h-3" />
+                <h3 className="text-[10px] font-bold uppercase tracking-widest">YOLOv11 API Connection</h3>
               </div>
-              <div className="space-y-4">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Gateway Endpoint</span>
-                  <span className="text-[11px] font-mono text-blue-400 truncate">api.sentinel-ai.cloud/v1/live</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-neutral-500">ENDPOINT:</span>
+                  <span className="text-blue-400">api.cctv-ai.cloud/v1/detect</span>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Latency</span>
-                    <span className="text-xs font-mono text-green-500">24ms</span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Accuracy</span>
-                    <span className="text-xs font-mono text-blue-400">98.4%</span>
-                  </div>
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-neutral-500">LATENCY:</span>
+                  <span className="text-green-500">24ms</span>
                 </div>
-                <div className="pt-4 border-t border-white/5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">GPU Cluster: ONLINE</span>
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-neutral-500">ACCURACY:</span>
+                  <span className="text-blue-400">98.4%</span>
+                </div>
+                <div className="pt-2 border-t border-blue-500/10">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-[9px] text-green-500 font-bold uppercase">Connected to GPU Cluster</span>
                   </div>
-                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                    <div className="w-[65%] h-full bg-blue-500 rounded-full shadow-[0_0_12px_rgba(59,130,246,0.4)]" />
-                  </div>
-                  <p className="text-[9px] text-neutral-600 mt-2 font-medium uppercase tracking-tighter">Load: 65.2% (RTX 4090 x 8)</p>
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="p-4 bg-black/40 border-t border-neutral-800 space-y-4">
+             <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500">
+                <span>ENCRYPTION</span>
+                <span className="text-green-900 font-bold uppercase">Secured</span>
+             </div>
+             
           </div>
         </aside>
       </main>

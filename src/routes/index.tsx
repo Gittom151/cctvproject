@@ -304,21 +304,27 @@ function Index() {
           </div>
         </div>
         
-        <div className="flex items-center gap-6">
-          {isLoadingModel && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/20 rounded-md border border-blue-800/50">
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping" />
-              <span className="text-[10px] font-bold text-blue-400 uppercase">กำลังโหลด AI Model...</span>
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">System Status</span>
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                <span className="text-xs font-mono text-neutral-300">OPERATIONAL</span>
+              </div>
             </div>
-          )}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 rounded-md border border-neutral-800">
-            <Activity className="w-3.5 h-3.5 text-green-500" />
-            <span className="text-xs font-mono text-neutral-400">สถานะระบบ: {model ? 'ปกติ' : 'เตรียมการ'}</span>
+            
+            <div className="w-px h-8 bg-white/10" />
+
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Local Time</span>
+              <span className="text-xs font-mono text-neutral-300 tracking-widest">{currentTime}</span>
+            </div>
           </div>
-          <div className="text-right">
-            <div className="text-xs font-mono text-neutral-400 tracking-widest">{currentTime}</div>
-            <div className="text-[10px] text-neutral-600 font-bold uppercase tracking-tighter">กำลังทำงาน</div>
-          </div>
+          
+          <button className="h-10 px-5 bg-white text-black text-xs font-bold rounded-full hover:bg-neutral-200 transition-all shadow-xl shadow-white/5 active:scale-95">
+            LOG OUT
+          </button>
         </div>
       </header>
 

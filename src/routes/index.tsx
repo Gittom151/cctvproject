@@ -27,6 +27,8 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
+  isExpanded: boolean;
+  onToggleExpand: (id: number) => void;
 }
 
 function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {

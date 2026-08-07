@@ -170,7 +170,13 @@ function CCTVMonitor({ id, model, onDetection, isExpanded, onToggleExpand }: CCT
   }, [videoSrc]);
 
   return (
-    <div className="relative group aspect-video bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all hover:border-blue-500/50">
+    <div 
+      onClick={() => onToggleExpand(id)}
+      className={cn(
+        "relative group bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all duration-500 cursor-pointer",
+        isExpanded ? "fixed inset-10 z-[100] shadow-[0_0_100px_rgba(0,0,0,0.8)] border-blue-500/30" : "aspect-video hover:border-blue-500/50"
+      )}
+    >
       {videoSrc ? (
         <div className="relative w-full h-full">
           <video

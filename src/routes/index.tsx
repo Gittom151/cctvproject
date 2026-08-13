@@ -433,6 +433,8 @@ function Index() {
                 id={id} 
                 model={model} 
                 onDetection={handleDetection}
+                onAccident={handleAccident}
+
               />
             ))}
           </div>

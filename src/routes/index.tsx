@@ -27,9 +27,45 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
+  onAccident: (id: number, reason: string) => void;
 }
 
-function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
+interface Track {
+  bbox: [number, number, number, number];
+  class: string;
+  score: number;
+  lastSeen: number;
+  vx: number;
+  vy: number;
+  hits: number;
+  speed: number;
+  avgSpeed: number;
+  alerted: boolean;
+}
+
+const VEHICLE_CLASSES = ["car", "truck", "bus", "motorcycle", "bicycle"];
+
+function iou(a: [number, number, number, number], b: [number, number, number, number]) {
+  const [x1, y1, w1, h1] = a;
+  const [x2, y2, w2, h2] = b;
+  const ox = Math.max(0, Math.min(x1 + w1, x2 + w2) - Math.max(x1, x2));
+  const oy = Math.max(0, Math.min(y1 + h1, y2 + h2) - Math.max(y1, y2));
+  const inter = ox * oy;
+  const union = w1 * h1 + w2 * h2 - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+// Non-maximum suppression: one box per physical vehicle
+function nms(dets: Detection[], threshold = 0.45): Detection[] {
+  const sorted = [...dets].sort((a, b) => b.score - a.score);
+  const kept: Detection[] = [];
+  for (const det of sorted) {
+    if (kept.every((k) => iou(k.bbox, det.bbox) < threshold)) kept.push(det);
+  }
+  return kept;
+}
+
+function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -37,10 +73,10 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(null);
   const detectionCounter = useRef(0);
-  const lastDetectionsRef = useRef<Detection[]>([]);
-  // Store persistent object tracks to prevent jumping
-  const objectTracksRef = useRef<Record<number, { bbox: [number, number, number, number], class: string, score: number, lastSeen: number }>>({});
+  const tracksRef = useRef<Record<number, Track>>({});
   const trackIdCounter = useRef(0);
+  const callbacksRef = useRef({ onDetection, onAccident });
+  callbacksRef.current = { onDetection, onAccident };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -53,116 +89,157 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
   const detectFrame = async () => {
     if (videoRef.current && videoRef.current.readyState === 4) {
       detectionCounter.current++;
-      
+
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const now = Date.now();
-      
-      // 1. Detection Phase (AI Inference)
-      // Optimized for high-speed tracking: detect every 3 frames instead of 5
-      if (detectionCounter.current % 3 === 0) { 
-        const predictions = model ? await model.detect(video, 10, 0.45) : [];
-        const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle'];
-        
-        // ACCIDENT DETECTION LOGIC (Simplified for now: filter by movement/overlap)
-        // In a real scenario, this would check for sudden deceleration or directional changes
-        const currentDetections = predictions.filter(p => vehicleClasses.includes(p.class)) as Detection[];
 
-        // 2. Advanced Object Tracking Logic (IOU + Multi-Scale Matching)
-        const updatedTracks: typeof objectTracksRef.current = {};
-        const availableDetections = [...currentDetections];
+      // 1. Detection phase — every 2nd frame for better temporal accuracy
+      if (detectionCounter.current % 2 === 0) {
+        const raw = model ? await model.detect(video, 20, 0.35) : [];
+        const diag = Math.hypot(video.videoWidth, video.videoHeight) || 1;
+        const candidates = nms(
+          raw.filter(
+            (p) =>
+              VEHICLE_CLASSES.includes(p.class) &&
+              p.bbox[2] > video.videoWidth * 0.015 &&
+              p.bbox[3] > video.videoHeight * 0.015,
+          ) as Detection[],
+        );
 
-        // Match existing tracks with new detections
-        Object.entries(objectTracksRef.current).forEach(([trackId, track]) => {
-          let bestMatchIndex = -1;
-          let maxIOU = 0.25; // Lower threshold to catch fast-moving objects
+        const updated: Record<number, Track> = {};
+        const available = [...candidates];
 
-          availableDetections.forEach((det, index) => {
-            const [x1, y1, w1, h1] = track.bbox;
-            const [x2, y2, w2, h2] = det.bbox;
-            
-            // Intersection Over Union calculation
-            const overlapX = Math.max(0, Math.min(x1 + w1, x2 + w2) - Math.max(x1, x2));
-            const overlapY = Math.max(0, Math.min(y1 + h1, y2 + h2) - Math.max(y1, y2));
-            const intersection = overlapX * overlapY;
-            const union = (w1 * h1) + (w2 * h2) - intersection;
-            const iou = intersection / union;
+        Object.entries(tracksRef.current).forEach(([key, track]) => {
+          const trackId = parseInt(key);
+          // Predict position from velocity so fast vehicles stay matched
+          const predicted: [number, number, number, number] = [
+            track.bbox[0] + track.vx,
+            track.bbox[1] + track.vy,
+            track.bbox[2],
+            track.bbox[3],
+          ];
 
-            if (iou > maxIOU) {
-              maxIOU = iou;
-              bestMatchIndex = index;
+          let best = -1;
+          let bestScore = 0.15;
+          available.forEach((det, index) => {
+            const score = Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox));
+            if (score > bestScore) {
+              bestScore = score;
+              best = index;
             }
           });
 
-          if (bestMatchIndex !== -1) {
-            const match = availableDetections[bestMatchIndex];
+          if (best !== -1) {
+            const match = available[best];
             if (match) {
-              availableDetections.splice(bestMatchIndex, 1);
-              // Smooth movement interpolation (lerp) for the bounding box
-              const lerpFactor = 0.65; // High responsiveness for fast vehicles
+              available.splice(best, 1);
+              const lerp = 0.6;
               const newBbox: [number, number, number, number] = [
-                track.bbox[0] + (match.bbox[0] - track.bbox[0]) * lerpFactor,
-                track.bbox[1] + (match.bbox[1] - track.bbox[1]) * lerpFactor,
-                track.bbox[2] + (match.bbox[2] - track.bbox[2]) * lerpFactor,
-                track.bbox[3] + (match.bbox[3] - track.bbox[3]) * lerpFactor
+                track.bbox[0] + (match.bbox[0] - track.bbox[0]) * lerp,
+                track.bbox[1] + (match.bbox[1] - track.bbox[1]) * lerp,
+                track.bbox[2] + (match.bbox[2] - track.bbox[2]) * lerp,
+                track.bbox[3] + (match.bbox[3] - track.bbox[3]) * lerp,
               ];
-              
-              updatedTracks[parseInt(trackId)] = { 
-                bbox: newBbox, 
-                class: match.class, 
-                score: match.score, 
-                lastSeen: now 
+              const vx = newBbox[0] - track.bbox[0];
+              const vy = newBbox[1] - track.bbox[1];
+              const speed = (Math.hypot(vx, vy) / diag) * 100;
+              updated[trackId] = {
+                bbox: newBbox,
+                class: match.class,
+                score: match.score,
+                lastSeen: now,
+                vx,
+                vy,
+                hits: track.hits + 1,
+                speed,
+                avgSpeed: track.avgSpeed * 0.85 + speed * 0.15,
+                alerted: track.alerted,
               };
             }
-          } else if (now - track.lastSeen < 600) { // Keep track longer to handle fast movement/occlusion
-            // Predict next position based on simple velocity could be added here
-            updatedTracks[parseInt(trackId)] = track;
+          } else if (now - track.lastSeen < 700) {
+            // Coast the track forward on its last known velocity (occlusion)
+            updated[trackId] = {
+              ...track,
+              bbox: [track.bbox[0] + track.vx, track.bbox[1] + track.vy, track.bbox[2], track.bbox[3]],
+            };
           }
         });
 
-        // Create new tracks for unmatched detections
-        availableDetections.forEach(det => {
+        available.forEach((det) => {
           trackIdCounter.current++;
-          updatedTracks[trackIdCounter.current] = { ...det, lastSeen: now };
+          updated[trackIdCounter.current] = {
+            ...det,
+            lastSeen: now,
+            vx: 0,
+            vy: 0,
+            hits: 1,
+            speed: 0,
+            avgSpeed: 0,
+            alerted: false,
+          };
         });
 
-        objectTracksRef.current = updatedTracks;
-        onDetection(id, Object.values(updatedTracks).map(v => v.class));
+        tracksRef.current = updated;
+
+        // 2. Accident heuristics on confirmed tracks
+        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3);
+        confirmed.forEach(([key, track]) => {
+          if (track.alerted) return;
+          // Sudden stop: was moving clearly, now nearly frozen
+          const suddenStop = track.avgSpeed > 0.55 && track.speed < track.avgSpeed * 0.2;
+          // Collision: heavy overlap with another moving vehicle
+          const collision = confirmed.some(
+            ([otherKey, other]) =>
+              otherKey !== key && iou(track.bbox, other.bbox) > 0.32 && (track.avgSpeed > 0.25 || other.avgSpeed > 0.25),
+          );
+          if (suddenStop || collision) {
+            track.alerted = true;
+            callbacksRef.current.onAccident(
+              id,
+              collision ? "ตรวจพบการชนกันของยานพาหนะ" : "ตรวจพบการหยุดฉับพลันผิดปกติ",
+            );
+          }
+        });
+
+        callbacksRef.current.onDetection(id, confirmed.map(([, t]) => t.class));
+        setDetections(confirmed.map(([, t]) => ({ bbox: t.bbox, class: t.class, score: t.score })));
       }
 
-      // 3. Rendering Phase (Smooth Interpolation)
+      // 3. Rendering phase
       if (canvas) {
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           const scaleX = canvas.width / video.videoWidth;
           const scaleY = canvas.height / video.videoHeight;
 
-          Object.entries(objectTracksRef.current).forEach(([trackId, track]) => {
+          Object.values(tracksRef.current).forEach((track) => {
+            if (track.hits < 3) return;
             const [x, y, width, height] = track.bbox;
             const targetX = x * scaleX;
             const targetY = y * scaleY;
             const targetW = width * scaleX;
             const targetH = height * scaleY;
+            const color = track.alerted ? "#f97316" : "#ef4444";
 
-            // Stable drawing (limited lerp for tracking stability)
             ctx.shadowBlur = 8;
-            ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
-            ctx.strokeStyle = '#ef4444';
+            ctx.shadowColor = "rgba(239, 68, 68, 0.4)";
+            ctx.strokeStyle = color;
             ctx.lineWidth = 2.5;
 
             ctx.beginPath();
             ctx.roundRect(targetX, targetY, targetW, targetH, 4);
             ctx.stroke();
-            
+
             ctx.shadowBlur = 0;
-            const labelText = track.class.toUpperCase();
-            ctx.font = 'bold 10px monospace';
+            const labelText = track.alerted ? "ACCIDENT" : track.class.toUpperCase();
+            ctx.font = "bold 10px monospace";
             const textWidth = ctx.measureText(labelText).width;
-            
-            ctx.fillStyle = '#ef4444';
+
+            ctx.fillStyle = color;
             ctx.fillRect(targetX, targetY - 16, textWidth + 10, 16);
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = "white";
             ctx.fillText(labelText, targetX + 5, targetY - 4);
           });
         }
@@ -170,6 +247,7 @@ function CCTVMonitor({ id, model, onDetection }: CCTVMonitorProps) {
     }
     requestRef.current = requestAnimationFrame(detectFrame);
   };
+
 
   useEffect(() => {
     if (videoSrc) {

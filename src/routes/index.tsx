@@ -318,7 +318,15 @@ function Index() {
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
   const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);
-  const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false });
+  const [currentTime, setCurrentTime] = useState("--:--:--");
+  const lastAlertRef = useRef<Record<number, number>>({});
+
+  useEffect(() => {
+    const tick = () => setCurrentTime(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     async function loadModel() {
@@ -338,34 +346,28 @@ function Index() {
 
   const handleDetection = (id: number, objects: string[]) => {
     setActiveDetections(prev => ({ ...prev, [id]: objects }));
-    
-    // Logic: alert only when traffic is high (> 5 vehicles)
-    if (objects.length > 5) {
-      setIncidents(prev => {
-        const existingIncident = prev.find(i => i.cam === id);
-        
-        // If an incident for this camera already exists, do nothing (prevent spam)
-        if (existingIncident) return prev;
-
-        const incidentId = Math.random().toString(36).substr(2, 9);
-        const newIncident = {
-          id: incidentId,
-          cam: id,
-          type: "ตรวจพบความหนาแน่นผิดปกติ",
-          time: new Date().toLocaleTimeString('en-US', { hour12: false })
-        };
-        
-        // Add new incident and ensure it's removed after 15 seconds
-        setTimeout(() => {
-          setIncidents(current => current.filter(i => i.id !== incidentId));
-        }, 15000);
-
-        return [newIncident, ...prev].slice(0, 5);
-      });
-    }
   };
 
-  const totalVehicles = Object.values(activeDetections).reduce((acc, curr) => acc + curr.length, 0);
+  const handleAccident = (id: number, reason: string) => {
+    const now = Date.now();
+    // Throttle: max one alert per camera every 8 seconds
+    if (now - (lastAlertRef.current[id] ?? 0) < 8000) return;
+    lastAlertRef.current[id] = now;
+
+    const incidentId = `${id}-${now}`;
+    setIncidents(prev =>
+      [
+        {
+          id: incidentId,
+          cam: id,
+          type: reason,
+          time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        },
+        ...prev,
+      ].slice(0, 8),
+    );
+  };
+
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">

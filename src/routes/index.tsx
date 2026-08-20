@@ -267,7 +267,6 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             src={videoSrc}
             autoPlay
             muted
-            loop
             playsInline
             className="w-full h-full object-cover"
           />
@@ -317,7 +316,7 @@ function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
-  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);
+  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string, status: "pending" | "confirmed" | "rejected"}[]>([]);
   const [currentTime, setCurrentTime] = useState("--:--:--");
   const lastAlertRef = useRef<Record<number, number>>({});
 
@@ -362,10 +361,15 @@ function Index() {
           cam: id,
           type: reason,
           time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+          status: "pending" as const,
         },
         ...prev,
       ].slice(0, 8),
     );
+  };
+
+  const verifyIncident = (incidentId: string, status: "confirmed" | "rejected") => {
+    setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status } : i)));
   };
 
 

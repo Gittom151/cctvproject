@@ -230,12 +230,15 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
         const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
-          // A sudden loss of speed also catches impacts with poles/walls, which are
-          // not object classes available in COCO-SSD.
+          // Parked cars / cars waiting at a red light stay still smoothly — never alert on them.
+          if (track.parked || track.maxSpeed < 0.25) return;
+          // A violent loss of speed catches impacts with poles/walls, which are
+          // not object classes available in COCO-SSD. Gentle braking is ignored.
           const suddenDeceleration =
-            track.hits >= 5 &&
-            Math.max(track.prevSpeed, track.avgSpeed) > 0.22 &&
-            track.speed < Math.max(track.prevSpeed, track.avgSpeed) * 0.38;
+            track.hits >= 6 &&
+            track.prevSpeed > 0.45 &&
+            track.speed < track.prevSpeed * 0.18 &&
+            track.stillFrames <= 2;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
           const directionCosine =
@@ -243,30 +246,24 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
               : 1;
           const abruptDirectionChange =
-            track.hits >= 5 && previousMagnitude > 0.12 && currentMagnitude > 0.12 && directionCosine < 0.15;
-          const currentArea = track.bbox[2] * track.bbox[3];
-          const scaleShock =
-            track.hits >= 5 &&
-            track.previousArea > 0 &&
-            Math.abs(currentArea - track.previousArea) / track.previousArea > 0.32 &&
-            track.avgSpeed > 0.18;
-          // Detect contact before boxes heavily overlap, while the vehicles are approaching.
+            track.hits >= 6 && previousMagnitude > 0.35 && currentMagnitude > 0.25 && directionCosine < -0.1;
+          // Detect contact before boxes heavily overlap, while the vehicles are approaching at speed.
           const collision = confirmed.some(
             ([otherKey, other]) =>
               otherKey !== key &&
-              (track.avgSpeed > 0.16 || other.avgSpeed > 0.16) &&
+              other.hits >= 3 &&
+              (track.speed > 0.3 || other.speed > 0.3) &&
               vehiclesAreInContact(track, other),
           );
-          const abnormalMotion = suddenDeceleration || abruptDirectionChange || scaleShock;
-          if (collision || abnormalMotion) {
+          if (collision || suddenDeceleration || abruptDirectionChange) {
             track.alerted = true;
             callbacksRef.current.onAccident(
               id,
               collision
-                ? "สงสัยรถชนกัน — กรุณาตรวจสอบ"
+                ? "สงสัยรถพุ่งชนกัน — กรุณาตรวจสอบ"
                 : suddenDeceleration
-                  ? "สงสัยรถชนเสาหรือวัตถุคงที่ — พบการชะลอฉับพลัน"
-                  : "พบการเคลื่อนไหวผิดปกติ — กรุณาตรวจสอบ",
+                  ? "สงสัยรถชนเสาหรือวัตถุคงที่ — หยุดฉับพลันรุนแรง"
+                  : "พบการเคลื่อนไหวผิดปกติรุนแรง — กรุณาตรวจสอบ",
             );
           }
         });

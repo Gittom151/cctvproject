@@ -281,16 +281,17 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           const scaleY = canvas.height / video.videoHeight;
 
           Object.values(tracksRef.current).forEach((track) => {
-            if (track.hits < 3) return;
+            // Only draw a box around vehicles involved in an incident
+            if (track.hits < 3 || !track.alerted) return;
             const [x, y, width, height] = track.bbox;
             const targetX = x * scaleX;
             const targetY = y * scaleY;
             const targetW = width * scaleX;
             const targetH = height * scaleY;
-            const color = track.alerted ? "#f97316" : "#ef4444";
+            const color = "#ef4444";
 
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = "rgba(239, 68, 68, 0.4)";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "rgba(239, 68, 68, 0.6)";
             ctx.strokeStyle = color;
             ctx.lineWidth = 2.5;
 
@@ -299,7 +300,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             ctx.stroke();
 
             ctx.shadowBlur = 0;
-            const labelText = track.alerted ? "ACCIDENT" : track.class.toUpperCase();
+            const labelText = "ACCIDENT";
             ctx.font = "bold 10px monospace";
             const textWidth = ctx.measureText(labelText).width;
 

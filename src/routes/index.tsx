@@ -414,11 +414,40 @@ function Index() {
     setActiveDetections(prev => ({ ...prev, [id]: objects }));
   };
 
+  // 3-second alarm siren via Web Audio (no asset needed)
+  const playAlarm = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 0.05);
+      gain.connect(ctx.destination);
+
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      // Alternating two-tone siren for 3 seconds
+      for (let i = 0; i < 6; i++) {
+        osc.frequency.setValueAtTime(i % 2 === 0 ? 880 : 620, ctx.currentTime + i * 0.5);
+      }
+      osc.connect(gain);
+      osc.start();
+      gain.gain.setValueAtTime(0.35, ctx.currentTime + 2.85);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 3);
+      osc.stop(ctx.currentTime + 3);
+      osc.onended = () => ctx.close();
+    } catch (err) {
+      console.error("alarm failed", err);
+    }
+  };
+
   const handleAccident = (id: number, reason: string) => {
     const now = Date.now();
     // Throttle: max one alert per camera every 8 seconds
     if (now - (lastAlertRef.current[id] ?? 0) < 8000) return;
     lastAlertRef.current[id] = now;
+    playAlarm();
 
     const incidentId = `${id}-${now}`;
     setIncidents(prev =>

@@ -267,7 +267,6 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             src={videoSrc}
             autoPlay
             muted
-            loop
             playsInline
             className="w-full h-full object-cover"
           />
@@ -317,7 +316,7 @@ function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
-  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string}[]>([]);
+  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string, status: "pending" | "confirmed" | "rejected"}[]>([]);
   const [currentTime, setCurrentTime] = useState("--:--:--");
   const lastAlertRef = useRef<Record<number, number>>({});
 
@@ -362,10 +361,15 @@ function Index() {
           cam: id,
           type: reason,
           time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+          status: "pending" as const,
         },
         ...prev,
       ].slice(0, 8),
     );
+  };
+
+  const verifyIncident = (incidentId: string, status: "confirmed" | "rejected") => {
+    setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status } : i)));
   };
 
 
@@ -458,6 +462,34 @@ function Index() {
                       <span className="text-[9px] font-mono text-neutral-500">{incident.time}</span>
                     </div>
                     <p className="text-xs font-medium text-neutral-300">{incident.type}</p>
+
+                    {incident.status === "pending" ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-[10px] text-neutral-500">นี่คือเหตุการณ์จริงหรือไม่?</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => verifyIncident(incident.id, "confirmed")}
+                            className="flex-1 px-2 py-1.5 rounded bg-red-600 hover:bg-red-500 text-[10px] font-bold text-white uppercase tracking-wider transition-colors"
+                          >
+                            ยืนยันเหตุจริง
+                          </button>
+                          <button
+                            onClick={() => verifyIncident(incident.id, "rejected")}
+                            className="flex-1 px-2 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[10px] font-bold text-neutral-300 uppercase tracking-wider transition-colors"
+                          >
+                            แจ้งเตือนผิดพลาด
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-[10px] font-bold uppercase tracking-wider">
+                        {incident.status === "confirmed" ? (
+                          <span className="text-red-400">ตรวจสอบแล้ว: อุบัติเหตุจริง</span>
+                        ) : (
+                          <span className="text-neutral-500">ตรวจสอบแล้ว: แจ้งเตือนผิดพลาด</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

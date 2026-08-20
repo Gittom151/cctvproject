@@ -45,6 +45,9 @@ interface Track {
   prevVx: number;
   prevVy: number;
   previousArea: number;
+  stillFrames: number;
+  maxSpeed: number;
+  parked: boolean;
   alerted: boolean;
 }
 
@@ -169,6 +172,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               const vx = newBbox[0] - track.bbox[0];
               const vy = newBbox[1] - track.bbox[1];
               const speed = (Math.hypot(vx, vy) / diag) * 100;
+              const stillFrames = speed < 0.06 ? track.stillFrames + 1 : 0;
               updated[trackId] = {
                 bbox: newBbox,
                 class: match.class,
@@ -183,6 +187,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 prevVx: track.vx,
                 prevVy: track.vy,
                 previousArea: track.bbox[2] * track.bbox[3],
+                stillFrames,
+                maxSpeed: Math.max(track.maxSpeed, speed),
+                // Vehicles that stay still for ~1.5s are parked or waiting at a red light
+                parked: track.parked || stillFrames > 25,
                 alerted: track.alerted,
               };
             }
@@ -209,6 +217,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             prevVx: 0,
             prevVy: 0,
             previousArea: det.bbox[2] * det.bbox[3],
+            stillFrames: 0,
+            maxSpeed: 0,
+            parked: false,
             alerted: false,
           };
         });
@@ -219,12 +230,15 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
         const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
-          // A sudden loss of speed also catches impacts with poles/walls, which are
-          // not object classes available in COCO-SSD.
+          // Parked cars / cars waiting at a red light stay still smoothly — never alert on them.
+          if (track.parked || track.maxSpeed < 0.25) return;
+          // A violent loss of speed catches impacts with poles/walls, which are
+          // not object classes available in COCO-SSD. Gentle braking is ignored.
           const suddenDeceleration =
-            track.hits >= 5 &&
-            Math.max(track.prevSpeed, track.avgSpeed) > 0.22 &&
-            track.speed < Math.max(track.prevSpeed, track.avgSpeed) * 0.38;
+            track.hits >= 6 &&
+            track.prevSpeed > 0.45 &&
+            track.speed < track.prevSpeed * 0.18 &&
+            track.stillFrames <= 2;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
           const directionCosine =
@@ -232,30 +246,24 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
               : 1;
           const abruptDirectionChange =
-            track.hits >= 5 && previousMagnitude > 0.12 && currentMagnitude > 0.12 && directionCosine < 0.15;
-          const currentArea = track.bbox[2] * track.bbox[3];
-          const scaleShock =
-            track.hits >= 5 &&
-            track.previousArea > 0 &&
-            Math.abs(currentArea - track.previousArea) / track.previousArea > 0.32 &&
-            track.avgSpeed > 0.18;
-          // Detect contact before boxes heavily overlap, while the vehicles are approaching.
+            track.hits >= 6 && previousMagnitude > 0.35 && currentMagnitude > 0.25 && directionCosine < -0.1;
+          // Detect contact before boxes heavily overlap, while the vehicles are approaching at speed.
           const collision = confirmed.some(
             ([otherKey, other]) =>
               otherKey !== key &&
-              (track.avgSpeed > 0.16 || other.avgSpeed > 0.16) &&
+              other.hits >= 3 &&
+              (track.speed > 0.3 || other.speed > 0.3) &&
               vehiclesAreInContact(track, other),
           );
-          const abnormalMotion = suddenDeceleration || abruptDirectionChange || scaleShock;
-          if (collision || abnormalMotion) {
+          if (collision || suddenDeceleration || abruptDirectionChange) {
             track.alerted = true;
             callbacksRef.current.onAccident(
               id,
               collision
-                ? "สงสัยรถชนกัน — กรุณาตรวจสอบ"
+                ? "สงสัยรถพุ่งชนกัน — กรุณาตรวจสอบ"
                 : suddenDeceleration
-                  ? "สงสัยรถชนเสาหรือวัตถุคงที่ — พบการชะลอฉับพลัน"
-                  : "พบการเคลื่อนไหวผิดปกติ — กรุณาตรวจสอบ",
+                  ? "สงสัยรถชนเสาหรือวัตถุคงที่ — หยุดฉับพลันรุนแรง"
+                  : "พบการเคลื่อนไหวผิดปกติรุนแรง — กรุณาตรวจสอบ",
             );
           }
         });
@@ -273,16 +281,17 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           const scaleY = canvas.height / video.videoHeight;
 
           Object.values(tracksRef.current).forEach((track) => {
-            if (track.hits < 3) return;
+            // Only draw a box around vehicles involved in an incident
+            if (track.hits < 3 || !track.alerted) return;
             const [x, y, width, height] = track.bbox;
             const targetX = x * scaleX;
             const targetY = y * scaleY;
             const targetW = width * scaleX;
             const targetH = height * scaleY;
-            const color = track.alerted ? "#f97316" : "#ef4444";
+            const color = "#ef4444";
 
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = "rgba(239, 68, 68, 0.4)";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "rgba(239, 68, 68, 0.6)";
             ctx.strokeStyle = color;
             ctx.lineWidth = 2.5;
 
@@ -291,7 +300,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             ctx.stroke();
 
             ctx.shadowBlur = 0;
-            const labelText = track.alerted ? "ACCIDENT" : track.class.toUpperCase();
+            const labelText = "ACCIDENT";
             ctx.font = "bold 10px monospace";
             const textWidth = ctx.measureText(labelText).width;
 
@@ -405,11 +414,40 @@ function Index() {
     setActiveDetections(prev => ({ ...prev, [id]: objects }));
   };
 
+  // 3-second alarm siren via Web Audio (no asset needed)
+  const playAlarm = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 0.05);
+      gain.connect(ctx.destination);
+
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      // Alternating two-tone siren for 3 seconds
+      for (let i = 0; i < 6; i++) {
+        osc.frequency.setValueAtTime(i % 2 === 0 ? 880 : 620, ctx.currentTime + i * 0.5);
+      }
+      osc.connect(gain);
+      osc.start();
+      gain.gain.setValueAtTime(0.35, ctx.currentTime + 2.85);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 3);
+      osc.stop(ctx.currentTime + 3);
+      osc.onended = () => ctx.close();
+    } catch (err) {
+      console.error("alarm failed", err);
+    }
+  };
+
   const handleAccident = (id: number, reason: string) => {
     const now = Date.now();
     // Throttle: max one alert per camera every 8 seconds
     if (now - (lastAlertRef.current[id] ?? 0) < 8000) return;
     lastAlertRef.current[id] = now;
+    playAlarm();
 
     const incidentId = `${id}-${now}`;
     setIncidents(prev =>

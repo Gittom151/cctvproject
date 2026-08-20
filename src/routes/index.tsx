@@ -41,6 +41,10 @@ interface Track {
   hits: number;
   speed: number;
   avgSpeed: number;
+  prevSpeed: number;
+  prevVx: number;
+  prevVy: number;
+  previousArea: number;
   alerted: boolean;
 }
 
@@ -54,6 +58,21 @@ function iou(a: [number, number, number, number], b: [number, number, number, nu
   const inter = ox * oy;
   const union = w1 * h1 + w2 * h2 - inter;
   return union > 0 ? inter / union : 0;
+}
+
+function vehiclesAreInContact(a: Track, b: Track) {
+  const [ax, ay, aw, ah] = a.bbox;
+  const [bx, by, bw, bh] = b.bbox;
+  const gapX = Math.max(0, Math.max(ax, bx) - Math.min(ax + aw, bx + bw));
+  const gapY = Math.max(0, Math.max(ay, by) - Math.min(ay + ah, by + bh));
+  const contactDistance = Math.hypot(gapX, gapY);
+  const contactLimit = Math.max(5, Math.min(aw, ah, bw, bh) * 0.22);
+  const centerDx = bx + bw / 2 - (ax + aw / 2);
+  const centerDy = by + bh / 2 - (ay + ah / 2);
+  const relativeVx = b.vx - a.vx;
+  const relativeVy = b.vy - a.vy;
+  const approaching = centerDx * relativeVx + centerDy * relativeVy < 0;
+  return (iou(a.bbox, b.bbox) > 0.08 || contactDistance <= contactLimit) && approaching;
 }
 
 // Non-maximum suppression: one box per physical vehicle
@@ -160,6 +179,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 hits: track.hits + 1,
                 speed,
                 avgSpeed: track.avgSpeed * 0.85 + speed * 0.15,
+                prevSpeed: track.speed,
+                prevVx: track.vx,
+                prevVy: track.vy,
+                previousArea: track.bbox[2] * track.bbox[3],
                 alerted: track.alerted,
               };
             }
@@ -182,6 +205,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             hits: 1,
             speed: 0,
             avgSpeed: 0,
+            prevSpeed: 0,
+            prevVx: 0,
+            prevVy: 0,
+            previousArea: det.bbox[2] * det.bbox[3],
             alerted: false,
           };
         });
@@ -192,18 +219,43 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
         const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
-          // Sudden stop: was moving clearly, now nearly frozen
-          const suddenStop = track.avgSpeed > 0.55 && track.speed < track.avgSpeed * 0.2;
-          // Collision: heavy overlap with another moving vehicle
+          // A sudden loss of speed also catches impacts with poles/walls, which are
+          // not object classes available in COCO-SSD.
+          const suddenDeceleration =
+            track.hits >= 5 &&
+            Math.max(track.prevSpeed, track.avgSpeed) > 0.22 &&
+            track.speed < Math.max(track.prevSpeed, track.avgSpeed) * 0.38;
+          const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
+          const currentMagnitude = Math.hypot(track.vx, track.vy);
+          const directionCosine =
+            previousMagnitude > 0 && currentMagnitude > 0
+              ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
+              : 1;
+          const abruptDirectionChange =
+            track.hits >= 5 && previousMagnitude > 0.12 && currentMagnitude > 0.12 && directionCosine < 0.15;
+          const currentArea = track.bbox[2] * track.bbox[3];
+          const scaleShock =
+            track.hits >= 5 &&
+            track.previousArea > 0 &&
+            Math.abs(currentArea - track.previousArea) / track.previousArea > 0.32 &&
+            track.avgSpeed > 0.18;
+          // Detect contact before boxes heavily overlap, while the vehicles are approaching.
           const collision = confirmed.some(
             ([otherKey, other]) =>
-              otherKey !== key && iou(track.bbox, other.bbox) > 0.32 && (track.avgSpeed > 0.25 || other.avgSpeed > 0.25),
+              otherKey !== key &&
+              (track.avgSpeed > 0.16 || other.avgSpeed > 0.16) &&
+              vehiclesAreInContact(track, other),
           );
-          if (suddenStop || collision) {
+          const abnormalMotion = suddenDeceleration || abruptDirectionChange || scaleShock;
+          if (collision || abnormalMotion) {
             track.alerted = true;
             callbacksRef.current.onAccident(
               id,
-              collision ? "ตรวจพบการชนกันของยานพาหนะ" : "ตรวจพบการหยุดฉับพลันผิดปกติ",
+              collision
+                ? "สงสัยรถชนกัน — กรุณาตรวจสอบ"
+                : suddenDeceleration
+                  ? "สงสัยรถชนเสาหรือวัตถุคงที่ — พบการชะลอฉับพลัน"
+                  : "พบการเคลื่อนไหวผิดปกติ — กรุณาตรวจสอบ",
             );
           }
         });

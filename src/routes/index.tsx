@@ -45,6 +45,9 @@ interface Track {
   prevVx: number;
   prevVy: number;
   previousArea: number;
+  stillFrames: number;
+  maxSpeed: number;
+  parked: boolean;
   alerted: boolean;
 }
 

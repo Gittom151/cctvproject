@@ -97,7 +97,12 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
       // 1. Detection phase — every 2nd frame for better temporal accuracy
       if (detectionCounter.current % 2 === 0) {
-        const raw = model ? await model.detect(video, 20, 0.35) : [];
+        let raw: Detection[] = [];
+        try {
+          raw = model ? ((await model.detect(video, 20, 0.35)) as Detection[]) : [];
+        } catch (err) {
+          console.error("detect failed", err);
+        }
         const diag = Math.hypot(video.videoWidth, video.videoHeight) || 1;
         const candidates = nms(
           raw.filter(

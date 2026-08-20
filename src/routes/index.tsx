@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-converter";
 import "@tensorflow/tfjs-backend-webgl";
+import "@tensorflow/tfjs-backend-cpu";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 
 export const Route = createFileRoute("/")({
@@ -96,7 +97,12 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
       // 1. Detection phase — every 2nd frame for better temporal accuracy
       if (detectionCounter.current % 2 === 0) {
-        const raw = model ? await model.detect(video, 20, 0.35) : [];
+        let raw: Detection[] = [];
+        try {
+          raw = model ? ((await model.detect(video, 20, 0.35)) as Detection[]) : [];
+        } catch (err) {
+          console.error("detect failed", err);
+        }
         const diag = Math.hypot(video.videoWidth, video.videoHeight) || 1;
         const candidates = nms(
           raw.filter(

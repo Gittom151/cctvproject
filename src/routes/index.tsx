@@ -217,6 +217,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             prevVx: 0,
             prevVy: 0,
             previousArea: det.bbox[2] * det.bbox[3],
+            stillFrames: 0,
+            maxSpeed: 0,
+            parked: false,
             alerted: false,
           };
         });

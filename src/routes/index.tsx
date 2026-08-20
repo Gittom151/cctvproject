@@ -172,6 +172,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               const vx = newBbox[0] - track.bbox[0];
               const vy = newBbox[1] - track.bbox[1];
               const speed = (Math.hypot(vx, vy) / diag) * 100;
+              const stillFrames = speed < 0.06 ? track.stillFrames + 1 : 0;
               updated[trackId] = {
                 bbox: newBbox,
                 class: match.class,
@@ -186,6 +187,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 prevVx: track.vx,
                 prevVy: track.vy,
                 previousArea: track.bbox[2] * track.bbox[3],
+                stillFrames,
+                maxSpeed: Math.max(track.maxSpeed, speed),
+                // Vehicles that stay still for ~1.5s are parked or waiting at a red light
+                parked: track.parked || stillFrames > 25,
                 alerted: track.alerted,
               };
             }

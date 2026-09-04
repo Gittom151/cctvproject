@@ -121,19 +121,25 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       if (detectionCounter.current % 2 === 0) {
         let raw: Detection[] = [];
         try {
-          raw = model ? ((await model.detect(video, 20, 0.35)) as Detection[]) : [];
+          raw = model ? ((await model.detect(video, 15, 0.55)) as Detection[]) : [];
         } catch (err) {
           console.error("detect failed", err);
         }
         const diag = Math.hypot(video.videoWidth, video.videoHeight) || 1;
         const candidates = nms(
-          raw.filter(
-            (p) =>
-              VEHICLE_CLASSES.includes(p.class) &&
-              p.bbox[2] > video.videoWidth * 0.015 &&
-              p.bbox[3] > video.videoHeight * 0.015,
-          ) as Detection[],
+          raw.filter((p) => {
+            if (!VEHICLE_CLASSES.includes(p.class)) return false;
+            const [, , w, h] = p.bbox;
+            // Reject implausible boxes: too small, oversized, or extreme aspect ratio
+            if (w < video.videoWidth * 0.03 || h < video.videoHeight * 0.03) return false;
+            if (w > video.videoWidth * 0.85 && h > video.videoHeight * 0.85) return false;
+            const ratio = w / Math.max(h, 1);
+            if (ratio < 0.3 || ratio > 4.2) return false;
+            return true;
+          }) as Detection[],
+          0.35,
         );
+
 
         const updated: Record<number, Track> = {};
         const available = [...candidates];

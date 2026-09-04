@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
+import { Upload, Camera, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-converter";

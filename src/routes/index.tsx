@@ -291,7 +291,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
           Object.values(tracksRef.current).forEach((track) => {
             // Only draw a box around vehicles involved in an incident
-            if (track.hits < 3 || !track.alerted) return;
+            if (track.hits < 5 || !track.alerted) return;
             const [x, y, width, height] = track.bbox;
             const targetX = x * scaleX;
             const targetY = y * scaleY;

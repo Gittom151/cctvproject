@@ -28,7 +28,7 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
-  onAccident: (id: number, reason: string) => void;
+  onAccident: (id: number, reason: string) => boolean;
 }
 
 interface Track {
@@ -47,6 +47,8 @@ interface Track {
   previousArea: number;
   stillFrames: number;
   maxSpeed: number;
+  recentPeakSpeed: number;
+  fastFrames: number;
   parked: boolean;
   alerted: boolean;
 }
@@ -76,6 +78,27 @@ function vehiclesAreInContact(a: Track, b: Track) {
   const relativeVy = b.vy - a.vy;
   const approaching = centerDx * relativeVx + centerDy * relativeVy < 0;
   return (iou(a.bbox, b.bbox) > 0.08 || contactDistance <= contactLimit) && approaching;
+}
+
+function centerDistance(a: [number, number, number, number], b: [number, number, number, number]) {
+  return Math.hypot(a[0] + a[2] / 2 - (b[0] + b[2] / 2), a[1] + a[3] / 2 - (b[1] + b[3] / 2));
+}
+
+function trackingAffinity(track: Track, det: Detection, diag: number) {
+  const predicted: [number, number, number, number] = [
+    track.bbox[0] + track.vx,
+    track.bbox[1] + track.vy,
+    track.bbox[2],
+    track.bbox[3],
+  ];
+  const distance = centerDistance(predicted, det.bbox) / diag;
+  const sizeRatio = Math.min(track.bbox[2] * track.bbox[3], det.bbox[2] * det.bbox[3]) /
+    Math.max(track.bbox[2] * track.bbox[3], det.bbox[2] * det.bbox[3], 1);
+  const overlap = Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox));
+
+  // A distant box or a dramatic size jump is another vehicle, even if greedy IOU matching prefers it.
+  if (distance > 0.14 || sizeRatio < 0.3) return -1;
+  return overlap * 0.68 + Math.max(0, 1 - distance / 0.14) * 0.24 + sizeRatio * 0.08;
 }
 
 // Non-maximum suppression: one box per physical vehicle
@@ -142,33 +165,27 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
 
         const updated: Record<number, Track> = {};
-        const available = [...candidates];
+        const previousTracks = Object.entries(tracksRef.current).map(([key, track]) => ({ id: Number(key), track }));
+        const matchedTracks = new Set<number>();
+        const matchedDetections = new Set<number>();
+        const assignments = previousTracks
+          .flatMap(({ id: trackId, track }) =>
+            candidates.map((det, detectionIndex) => ({
+              trackId,
+              detectionIndex,
+              affinity: trackingAffinity(track, det, diag),
+            })),
+          )
+          .filter((candidate) => candidate.affinity >= 0.2)
+          .sort((a, b) => b.affinity - a.affinity);
 
-        Object.entries(tracksRef.current).forEach(([key, track]) => {
-          const trackId = parseInt(key);
-          // Predict position from velocity so fast vehicles stay matched
-          const predicted: [number, number, number, number] = [
-            track.bbox[0] + track.vx,
-            track.bbox[1] + track.vy,
-            track.bbox[2],
-            track.bbox[3],
-          ];
-
-          let best = -1;
-          let bestScore = 0.22;
-
-          available.forEach((det, index) => {
-            const score = Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox));
-            if (score > bestScore) {
-              bestScore = score;
-              best = index;
-            }
-          });
-
-          if (best !== -1) {
-            const match = available[best];
-            if (match) {
-              available.splice(best, 1);
+        assignments.forEach(({ trackId, detectionIndex }) => {
+          if (matchedTracks.has(trackId) || matchedDetections.has(detectionIndex)) return;
+          const track = tracksRef.current[trackId];
+          const match = candidates[detectionIndex];
+          if (!track || !match) return;
+          matchedTracks.add(trackId);
+          matchedDetections.add(detectionIndex);
               const lerp = 0.6;
               const newBbox: [number, number, number, number] = [
                 track.bbox[0] + (match.bbox[0] - track.bbox[0]) * lerp,
@@ -180,6 +197,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               const vy = newBbox[1] - track.bbox[1];
               const speed = (Math.hypot(vx, vy) / diag) * 100;
               const stillFrames = speed < 0.06 ? track.stillFrames + 1 : 0;
+              const avgSpeed = track.avgSpeed * 0.85 + speed * 0.15;
+              const fastFrames = speed > Math.max(0.85, avgSpeed * 1.35) ? track.fastFrames + 1 : Math.max(0, track.fastFrames - 1);
               updated[trackId] = {
                 bbox: newBbox,
                 class: match.class,
@@ -189,19 +208,23 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 vy,
                 hits: track.hits + 1,
                 speed,
-                avgSpeed: track.avgSpeed * 0.85 + speed * 0.15,
+                avgSpeed,
                 prevSpeed: track.speed,
                 prevVx: track.vx,
                 prevVy: track.vy,
                 previousArea: track.bbox[2] * track.bbox[3],
                 stillFrames,
                 maxSpeed: Math.max(track.maxSpeed, speed),
+                recentPeakSpeed: Math.max(speed, track.recentPeakSpeed * 0.94),
+                fastFrames,
                 // Vehicles that stay still for ~1.5s are parked or waiting at a red light
                 parked: track.parked || stillFrames > 25,
                 alerted: track.alerted,
               };
-            }
-          } else if (now - track.lastSeen < 700) {
+        });
+
+        previousTracks.forEach(({ id: trackId, track }) => {
+          if (!matchedTracks.has(trackId) && now - track.lastSeen < 700) {
             // Coast the track forward on its last known velocity (occlusion)
             updated[trackId] = {
               ...track,
@@ -210,7 +233,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           }
         });
 
-        available.forEach((det) => {
+        candidates.forEach((det, detectionIndex) => {
+          if (matchedDetections.has(detectionIndex)) return;
           trackIdCounter.current++;
           updated[trackIdCounter.current] = {
             ...det,
@@ -226,6 +250,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             previousArea: det.bbox[2] * det.bbox[3],
             stillFrames: 0,
             maxSpeed: 0,
+            recentPeakSpeed: 0,
+            fastFrames: 0,
             parked: false,
             alerted: false,
           };
@@ -243,8 +269,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           // not object classes available in COCO-SSD. Gentle braking is ignored.
           const suddenDeceleration =
             track.hits >= 10 &&
-            track.prevSpeed > 0.7 &&
-            track.speed < track.prevSpeed * 0.12 &&
+            track.recentPeakSpeed > 0.75 &&
+            track.prevSpeed > 0.45 &&
+            track.speed < track.recentPeakSpeed * 0.18 &&
             track.stillFrames <= 2;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
@@ -254,26 +281,30 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               : 1;
           const abruptDirectionChange =
             track.hits >= 10 && previousMagnitude > 0.6 && currentMagnitude > 0.45 && directionCosine < -0.35;
-          // Detect contact before boxes heavily overlap, while the vehicles are approaching at speed.
-          const collision = confirmed.some(
+          // Only the faster approaching vehicle is treated as the likely source of an impact.
+          // This prevents the warning box jumping to a parked/waiting vehicle that was struck.
+          const collisionTarget = confirmed.find(
             ([otherKey, other]) =>
               otherKey !== key &&
               other.hits >= 5 &&
-              !other.parked &&
-              (track.speed > 0.5 || other.speed > 0.5) &&
+              track.speed > Math.max(0.5, other.speed * 1.15) &&
               vehiclesAreInContact(track, other),
           );
+          const collision = Boolean(collisionTarget);
+          const sustainedHighSpeed = track.hits >= 10 && track.fastFrames >= 4 && track.speed > 0.85;
 
-          if (collision || suddenDeceleration || abruptDirectionChange) {
-            track.alerted = true;
-            callbacksRef.current.onAccident(
+          if (collision || suddenDeceleration || abruptDirectionChange || sustainedHighSpeed) {
+            const accepted = callbacksRef.current.onAccident(
               id,
               collision
                 ? "สงสัยรถพุ่งชนกัน — กรุณาตรวจสอบ"
                 : suddenDeceleration
                   ? "สงสัยรถชนเสาหรือวัตถุคงที่ — หยุดฉับพลันรุนแรง"
-                  : "พบการเคลื่อนไหวผิดปกติรุนแรง — กรุณาตรวจสอบ",
+                  : abruptDirectionChange
+                    ? "พบรถเสียการควบคุมหรือเปลี่ยนทิศทางรุนแรง — กรุณาตรวจสอบ"
+                    : "พบรถเคลื่อนที่เร็วผิดปกติ — กรุณาตรวจสอบ",
             );
+            if (accepted) track.alerted = true;
           }
         });
 
@@ -454,7 +485,7 @@ function Index() {
   const handleAccident = (id: number, reason: string) => {
     const now = Date.now();
     // Throttle: max one alert per camera every 8 seconds
-    if (now - (lastAlertRef.current[id] ?? 0) < 8000) return;
+    if (now - (lastAlertRef.current[id] ?? 0) < 8000) return false;
     lastAlertRef.current[id] = now;
     playAlarm();
 
@@ -471,6 +502,7 @@ function Index() {
         ...prev,
       ].slice(0, 8),
     );
+    return true;
   };
 
   const verifyIncident = (incidentId: string, status: "confirmed" | "rejected") => {

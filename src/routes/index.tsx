@@ -155,7 +155,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           ];
 
           let best = -1;
-          let bestScore = 0.15;
+          let bestScore = 0.22;
+
           available.forEach((det, index) => {
             const score = Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox));
             if (score > bestScore) {

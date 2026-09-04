@@ -471,16 +471,8 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
-      {/* User Instruction Banner */}
-      <div className="bg-red-600/10 border-b border-red-500/20 py-2 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-red-400">
-          <AlertCircle className="w-4 h-4" />
-          <span className="text-xs font-medium">อันนี้คือตรวจอย่างคลิปรถชน ต่อไปจะไม่ให้ai ตรวจจับรถทุกคันเเต่จะให้มันตรวจจับรถที่เกิดอุบัติเหตุเท่านั้นเเละส่งเเจ้งเตือน</span>
-        </div>
-        <div className="text-[10px] text-red-500 font-mono animate-pulse">
-          MODE: ACCIDENT_DETECTION_ONLY
-        </div>
-      </div>
+
+
 
       {/* Header */}
       <header className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-black/50 backdrop-blur-xl sticky top-0 z-50">

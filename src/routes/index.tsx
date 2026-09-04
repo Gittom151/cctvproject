@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Upload, Camera, AlertCircle, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
+import { Upload, Camera, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-converter";
@@ -121,19 +121,25 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       if (detectionCounter.current % 2 === 0) {
         let raw: Detection[] = [];
         try {
-          raw = model ? ((await model.detect(video, 20, 0.35)) as Detection[]) : [];
+          raw = model ? ((await model.detect(video, 15, 0.55)) as Detection[]) : [];
         } catch (err) {
           console.error("detect failed", err);
         }
         const diag = Math.hypot(video.videoWidth, video.videoHeight) || 1;
         const candidates = nms(
-          raw.filter(
-            (p) =>
-              VEHICLE_CLASSES.includes(p.class) &&
-              p.bbox[2] > video.videoWidth * 0.015 &&
-              p.bbox[3] > video.videoHeight * 0.015,
-          ) as Detection[],
+          raw.filter((p) => {
+            if (!VEHICLE_CLASSES.includes(p.class)) return false;
+            const [, , w, h] = p.bbox;
+            // Reject implausible boxes: too small, oversized, or extreme aspect ratio
+            if (w < video.videoWidth * 0.03 || h < video.videoHeight * 0.03) return false;
+            if (w > video.videoWidth * 0.85 && h > video.videoHeight * 0.85) return false;
+            const ratio = w / Math.max(h, 1);
+            if (ratio < 0.3 || ratio > 4.2) return false;
+            return true;
+          }) as Detection[],
+          0.35,
         );
+
 
         const updated: Record<number, Track> = {};
         const available = [...candidates];
@@ -149,7 +155,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           ];
 
           let best = -1;
-          let bestScore = 0.15;
+          let bestScore = 0.22;
+
           available.forEach((det, index) => {
             const score = Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox));
             if (score > bestScore) {
@@ -226,18 +233,18 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
         tracksRef.current = updated;
 
-        // 2. Accident heuristics on confirmed tracks
-        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3);
+        // 2. Accident heuristics on confirmed tracks (stricter confirmation = fewer false boxes)
+        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 5 && t.score >= 0.6);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
           // Parked cars / cars waiting at a red light stay still smoothly — never alert on them.
-          if (track.parked || track.maxSpeed < 0.25) return;
+          if (track.parked || track.maxSpeed < 0.4) return;
           // A violent loss of speed catches impacts with poles/walls, which are
           // not object classes available in COCO-SSD. Gentle braking is ignored.
           const suddenDeceleration =
-            track.hits >= 6 &&
-            track.prevSpeed > 0.45 &&
-            track.speed < track.prevSpeed * 0.18 &&
+            track.hits >= 10 &&
+            track.prevSpeed > 0.7 &&
+            track.speed < track.prevSpeed * 0.12 &&
             track.stillFrames <= 2;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
@@ -246,15 +253,17 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
               : 1;
           const abruptDirectionChange =
-            track.hits >= 6 && previousMagnitude > 0.35 && currentMagnitude > 0.25 && directionCosine < -0.1;
+            track.hits >= 10 && previousMagnitude > 0.6 && currentMagnitude > 0.45 && directionCosine < -0.35;
           // Detect contact before boxes heavily overlap, while the vehicles are approaching at speed.
           const collision = confirmed.some(
             ([otherKey, other]) =>
               otherKey !== key &&
-              other.hits >= 3 &&
-              (track.speed > 0.3 || other.speed > 0.3) &&
+              other.hits >= 5 &&
+              !other.parked &&
+              (track.speed > 0.5 || other.speed > 0.5) &&
               vehiclesAreInContact(track, other),
           );
+
           if (collision || suddenDeceleration || abruptDirectionChange) {
             track.alerted = true;
             callbacksRef.current.onAccident(
@@ -282,7 +291,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
           Object.values(tracksRef.current).forEach((track) => {
             // Only draw a box around vehicles involved in an incident
-            if (track.hits < 3 || !track.alerted) return;
+            if (track.hits < 5 || !track.alerted) return;
             const [x, y, width, height] = track.bbox;
             const targetX = x * scaleX;
             const targetY = y * scaleY;
@@ -471,16 +480,8 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-sans selection:bg-blue-500/30">
-      {/* User Instruction Banner */}
-      <div className="bg-red-600/10 border-b border-red-500/20 py-2 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-red-400">
-          <AlertCircle className="w-4 h-4" />
-          <span className="text-xs font-medium">อันนี้คือตรวจอย่างคลิปรถชน ต่อไปจะไม่ให้ai ตรวจจับรถทุกคันเเต่จะให้มันตรวจจับรถที่เกิดอุบัติเหตุเท่านั้นเเละส่งเเจ้งเตือน</span>
-        </div>
-        <div className="text-[10px] text-red-500 font-mono animate-pulse">
-          MODE: ACCIDENT_DETECTION_ONLY
-        </div>
-      </div>
+
+
 
       {/* Header */}
       <header className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-black/50 backdrop-blur-xl sticky top-0 z-50">

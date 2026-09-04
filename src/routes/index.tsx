@@ -233,18 +233,18 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
         tracksRef.current = updated;
 
-        // 2. Accident heuristics on confirmed tracks
-        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3);
+        // 2. Accident heuristics on confirmed tracks (stricter confirmation = fewer false boxes)
+        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 5 && t.score >= 0.6);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
           // Parked cars / cars waiting at a red light stay still smoothly — never alert on them.
-          if (track.parked || track.maxSpeed < 0.25) return;
+          if (track.parked || track.maxSpeed < 0.4) return;
           // A violent loss of speed catches impacts with poles/walls, which are
           // not object classes available in COCO-SSD. Gentle braking is ignored.
           const suddenDeceleration =
-            track.hits >= 6 &&
-            track.prevSpeed > 0.45 &&
-            track.speed < track.prevSpeed * 0.18 &&
+            track.hits >= 10 &&
+            track.prevSpeed > 0.7 &&
+            track.speed < track.prevSpeed * 0.12 &&
             track.stillFrames <= 2;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
@@ -253,15 +253,17 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
               : 1;
           const abruptDirectionChange =
-            track.hits >= 6 && previousMagnitude > 0.35 && currentMagnitude > 0.25 && directionCosine < -0.1;
+            track.hits >= 10 && previousMagnitude > 0.6 && currentMagnitude > 0.45 && directionCosine < -0.35;
           // Detect contact before boxes heavily overlap, while the vehicles are approaching at speed.
           const collision = confirmed.some(
             ([otherKey, other]) =>
               otherKey !== key &&
-              other.hits >= 3 &&
-              (track.speed > 0.3 || other.speed > 0.3) &&
+              other.hits >= 5 &&
+              !other.parked &&
+              (track.speed > 0.5 || other.speed > 0.5) &&
               vehiclesAreInContact(track, other),
           );
+
           if (collision || suddenDeceleration || abruptDirectionChange) {
             track.alerted = true;
             callbacksRef.current.onAccident(

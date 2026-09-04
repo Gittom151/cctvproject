@@ -144,8 +144,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       const canvas = canvasRef.current;
       const now = Date.now();
 
-      // 1. Detection phase — every 2nd frame for better temporal accuracy
-      if (detectionCounter.current % 2 === 0) {
+      // Use every inference cycle for fast vehicles, and a lighter cadence for calm scenes.
+      const hasFastVehicle = Object.values(tracksRef.current).some((track) => track.recentPeakSpeed > 0.75);
+      if (detectionCounter.current % (hasFastVehicle ? 1 : 2) === 0) {
         let raw: Detection[] = [];
         try {
           raw = model ? ((await model.detect(video, 15, 0.55)) as Detection[]) : [];

@@ -14,6 +14,10 @@ export const Route = createFileRoute("/")({
     title: "ระบบตรวจสอบอุบัติเหตุ CCTV - AI Detection",
     meta: [
       { name: "description", content: "ระบบจำลอง CCTV พร้อม AI ตรวจจับรถยนต์และการเคลื่อนไหว" },
+      { property: "og:title", content: "ระบบตรวจสอบอุบัติเหตุ CCTV - AI Detection" },
+      { property: "og:description", content: "ระบบจำลอง CCTV พร้อม AI ตรวจจับรถยนต์และการเคลื่อนไหว" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
 });
@@ -218,7 +222,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 recentPeakSpeed: Math.max(speed, track.recentPeakSpeed * 0.94),
                 fastFrames,
                 // Vehicles that stay still for ~1.5s are parked or waiting at a red light
-                parked: track.parked || stillFrames > 25,
+                parked: stillFrames > 25,
                 alerted: track.alerted,
               };
         });

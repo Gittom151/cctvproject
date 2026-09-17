@@ -137,7 +137,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
         let raw: Detection[] = [];
         try {
           const activeModel = modelRef.current;
-          raw = activeModel ? ((await activeModel.detect(video, 20, 0.46)) as Detection[]) : [];
+          raw = activeModel ? ((await activeModel.detect(video, 25, 0.34)) as Detection[]) : [];
         } catch (err) {
           console.error("detect failed", err);
         }
@@ -173,7 +173,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           ];
 
           let best = -1;
-          let bestScore = 0.16;
+          let bestScore = 0.12;
 
           available.forEach((det, index) => {
             const [px, py, pw, ph] = predicted;
@@ -265,15 +265,15 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
         // 2. Accident heuristics on stable tracks. The uploaded example is a
         // short, elevated-camera clip, so use motion history instead of waiting
         // for long tracks or requiring a single very high confidence frame.
-        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 3 && t.score >= 0.48);
+        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 2 && t.score >= 0.36);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
           // A stationary car by itself is normal. It may still be the target of
           // a moving car, so parked tracks remain in pairwise collision checks.
           const suddenDeceleration =
-            track.hits >= 5 &&
-            track.prevSpeed > 0.65 &&
-            track.speed < track.prevSpeed * 0.42 &&
+            track.hits >= 3 &&
+            track.prevSpeed > 0.38 &&
+            track.speed < track.prevSpeed * 0.5 &&
             track.stillFrames <= 3;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
@@ -282,10 +282,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
               : 1;
           const abruptDirectionChange =
-            track.hits >= 5 && track.prevSpeed > 0.4 && track.speed > 0.3 && directionCosine < 0.35;
+            track.hits >= 3 && track.prevSpeed > 0.28 && track.speed > 0.2 && directionCosine < 0.45;
           const area = track.bbox[2] * track.bbox[3];
           const areaChange = Math.abs(area - track.previousArea) / Math.max(track.previousArea, 1);
-          const unstableScale = track.hits >= 5 && track.speed > 0.28 && areaChange > 0.32;
+          const unstableScale = track.hits >= 3 && track.speed > 0.2 && areaChange > 0.25;
           const collision = confirmed.some(
             ([otherKey, other]) =>
               otherKey !== key &&
@@ -364,7 +364,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [videoSrc, model]);
+  }, [videoSrc]);
 
   return (
     <div className="relative group aspect-video bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden flex items-center justify-center transition-all hover:border-blue-500/50">

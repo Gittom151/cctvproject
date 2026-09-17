@@ -14,6 +14,10 @@ export const Route = createFileRoute("/")({
     title: "ระบบตรวจสอบอุบัติเหตุ CCTV - AI Detection",
     meta: [
       { name: "description", content: "ระบบจำลอง CCTV พร้อม AI ตรวจจับรถยนต์และการเคลื่อนไหว" },
+      { property: "og:title", content: "ระบบตรวจสอบอุบัติเหตุ CCTV - AI Detection" },
+      { property: "og:description", content: "ระบบจำลอง CCTV พร้อม AI ตรวจจับรถยนต์และการเคลื่อนไหว" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
 });
@@ -49,6 +53,7 @@ interface Track {
   maxSpeed: number;
   parked: boolean;
   alerted: boolean;
+  anomalyFrames: number;
 }
 
 const VEHICLE_CLASSES = ["car", "truck", "bus", "motorcycle", "bicycle"];
@@ -72,10 +77,13 @@ function vehiclesAreInContact(a: Track, b: Track) {
   const contactLimit = Math.max(5, Math.min(aw, ah, bw, bh) * 0.22);
   const centerDx = bx + bw / 2 - (ax + aw / 2);
   const centerDy = by + bh / 2 - (ay + ah / 2);
-  const relativeVx = b.vx - a.vx;
-  const relativeVy = b.vy - a.vy;
+  // Previous velocity is more useful at the impact frame, where both cars may
+  // already have slowed down or changed direction.
+  const relativeVx = b.prevVx - a.prevVx;
+  const relativeVy = b.prevVy - a.prevVy;
   const approaching = centerDx * relativeVx + centerDy * relativeVy < 0;
-  return (iou(a.bbox, b.bbox) > 0.08 || contactDistance <= contactLimit) && approaching;
+  const oneWasMoving = Math.max(a.prevSpeed, b.prevSpeed, a.speed, b.speed) > 0.22;
+  return (iou(a.bbox, b.bbox) > 0.035 || contactDistance <= contactLimit * 1.45) && approaching && oneWasMoving;
 }
 
 // Non-maximum suppression: one box per physical vehicle
@@ -98,12 +106,28 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   const detectionCounter = useRef(0);
   const tracksRef = useRef<Record<number, Track>>({});
   const trackIdCounter = useRef(0);
+  const modelRef = useRef(model);
+  const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previousFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const lastMotionTimeRef = useRef(-1);
+  const motionStateRef = useRef({ samples: 0, average: 0, previous: 0, alerted: false });
+  const motionAlertRef = useRef<{ bbox: [number, number, number, number]; until: number } | null>(null);
   const callbacksRef = useRef({ onDetection, onAccident });
+  modelRef.current = model;
   callbacksRef.current = { onDetection, onAccident };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      if (videoSrc) URL.revokeObjectURL(videoSrc);
+      tracksRef.current = {};
+      trackIdCounter.current = 0;
+      detectionCounter.current = 0;
+      previousFrameRef.current = null;
+      lastMotionTimeRef.current = -1;
+      motionStateRef.current = { samples: 0, average: 0, previous: 0, alerted: false };
+      motionAlertRef.current = null;
+      setDetections([]);
       const url = URL.createObjectURL(file);
       setVideoSrc(url);
     }
@@ -117,11 +141,90 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       const canvas = canvasRef.current;
       const now = Date.now();
 
+      // Independent motion analysis keeps incident detection working when the
+      // object model misses small vehicles in elevated or distant CCTV views.
+      if (video.currentTime - lastMotionTimeRef.current >= 0.09) {
+        lastMotionTimeRef.current = video.currentTime;
+        const motionCanvas = motionCanvasRef.current ?? document.createElement("canvas");
+        motionCanvas.width = 160;
+        motionCanvas.height = 90;
+        motionCanvasRef.current = motionCanvas;
+        const motionContext = motionCanvas.getContext("2d", { willReadFrequently: true });
+        if (motionContext) {
+          motionContext.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
+          const pixels = motionContext.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
+          const gray = new Uint8ClampedArray(motionCanvas.width * motionCanvas.height);
+          let changed = 0;
+          let minX = motionCanvas.width;
+          let minY = motionCanvas.height;
+          let maxX = 0;
+          let maxY = 0;
+          const previous = previousFrameRef.current;
+
+          for (let index = 0; index < gray.length; index++) {
+            const pixelIndex = index * 4;
+            const red = pixels[pixelIndex] ?? 0;
+            const green = pixels[pixelIndex + 1] ?? 0;
+            const blue = pixels[pixelIndex + 2] ?? 0;
+            const luminance = Math.round(red * 0.299 + green * 0.587 + blue * 0.114);
+            gray[index] = luminance;
+            const previousLuminance = previous?.[index];
+            if (previousLuminance !== undefined && Math.abs(luminance - previousLuminance) > 14) {
+              const x = index % motionCanvas.width;
+              const y = Math.floor(index / motionCanvas.width);
+              // Ignore embedded timestamps and edge noise common in CCTV clips.
+              if (y > 5 && y < motionCanvas.height - 8) {
+                changed++;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+              }
+            }
+          }
+          previousFrameRef.current = gray;
+
+          if (previous) {
+            const motion = changed / (motionCanvas.width * motionCanvas.height);
+            const state = motionStateRef.current;
+            const previousAverage = state.average || motion;
+            const abruptSurge = state.samples >= 5 && motion > 0.012 && motion > previousAverage * 1.32;
+            const abruptStop = state.samples >= 7 && state.previous > 0.018 && motion < state.previous * 0.58;
+            state.samples++;
+            state.average = previousAverage * 0.86 + motion * 0.14;
+            state.previous = motion;
+
+            if (!state.alerted && (abruptSurge || abruptStop)) {
+              state.alerted = true;
+              const scaleX = video.videoWidth / motionCanvas.width;
+              const scaleY = video.videoHeight / motionCanvas.height;
+              const padding = 12;
+              const sourceBox: [number, number, number, number] = changed > 0
+                ? [
+                    Math.max(0, minX - padding) * scaleX,
+                    Math.max(0, minY - padding) * scaleY,
+                    Math.min(motionCanvas.width, maxX - minX + padding * 2) * scaleX,
+                    Math.min(motionCanvas.height, maxY - minY + padding * 2) * scaleY,
+                  ]
+                : [0, 0, video.videoWidth, video.videoHeight];
+              motionAlertRef.current = { bbox: sourceBox, until: now + 6000 };
+              callbacksRef.current.onAccident(
+                id,
+                abruptStop
+                  ? "พบรถหยุดหรือเปลี่ยนสภาพการเคลื่อนที่ฉับพลัน — กรุณาตรวจสอบ"
+                  : "พบการเคลื่อนไหวผิดปกติคล้ายเหตุชน — กรุณาตรวจสอบ",
+              );
+            }
+          }
+        }
+      }
+
       // 1. Detection phase — every 2nd frame for better temporal accuracy
       if (detectionCounter.current % 2 === 0) {
         let raw: Detection[] = [];
         try {
-          raw = model ? ((await model.detect(video, 15, 0.55)) as Detection[]) : [];
+          const activeModel = modelRef.current;
+          raw = activeModel ? ((await activeModel.detect(video, 25, 0.34)) as Detection[]) : [];
         } catch (err) {
           console.error("detect failed", err);
         }
@@ -131,7 +234,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             if (!VEHICLE_CLASSES.includes(p.class)) return false;
             const [, , w, h] = p.bbox;
             // Reject implausible boxes: too small, oversized, or extreme aspect ratio
-            if (w < video.videoWidth * 0.03 || h < video.videoHeight * 0.03) return false;
+            // Keep distant vehicles in elevated CCTV footage, while removing
+            // tiny unstable detections that cannot be tracked reliably.
+            if (w < video.videoWidth * 0.018 || h < video.videoHeight * 0.018) return false;
             if (w > video.videoWidth * 0.85 && h > video.videoHeight * 0.85) return false;
             const ratio = w / Math.max(h, 1);
             if (ratio < 0.3 || ratio > 4.2) return false;
@@ -155,10 +260,18 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           ];
 
           let best = -1;
-          let bestScore = 0.22;
+          let bestScore = 0.12;
 
           available.forEach((det, index) => {
-            const score = Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox));
+            const [px, py, pw, ph] = predicted;
+            const [dx, dy, dw, dh] = det.bbox;
+            const centerDistance = Math.hypot(px + pw / 2 - (dx + dw / 2), py + ph / 2 - (dy + dh / 2));
+            const distanceScore = Math.max(0, 1 - centerDistance / Math.max(30, Math.hypot(pw, ph) * 1.8));
+            const sizeSimilarity = Math.min(pw * ph, dw * dh) / Math.max(pw * ph, dw * dh, 1);
+            const classCompatible = det.class === track.class || (VEHICLE_CLASSES.includes(det.class) && VEHICLE_CLASSES.includes(track.class));
+            const score = classCompatible
+              ? Math.max(iou(track.bbox, det.bbox), iou(predicted, det.bbox), distanceScore * sizeSimilarity * 0.72)
+              : 0;
             if (score > bestScore) {
               bestScore = score;
               best = index;
@@ -178,8 +291,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ];
               const vx = newBbox[0] - track.bbox[0];
               const vy = newBbox[1] - track.bbox[1];
-              const speed = (Math.hypot(vx, vy) / diag) * 100;
-              const stillFrames = speed < 0.06 ? track.stillFrames + 1 : 0;
+              const elapsedSeconds = Math.max(0.04, Math.min(0.8, (now - track.lastSeen) / 1000));
+              const speed = (Math.hypot(vx, vy) / diag / elapsedSeconds) * 100;
+              const stillFrames = speed < 0.18 ? track.stillFrames + 1 : 0;
               updated[trackId] = {
                 bbox: newBbox,
                 class: match.class,
@@ -196,9 +310,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 previousArea: track.bbox[2] * track.bbox[3],
                 stillFrames,
                 maxSpeed: Math.max(track.maxSpeed, speed),
-                // Vehicles that stay still for ~1.5s are parked or waiting at a red light
-                parked: track.parked || stillFrames > 25,
+                // A parked/waiting label is reversible as soon as movement resumes.
+                parked: stillFrames > 16,
                 alerted: track.alerted,
+                anomalyFrames: track.anomalyFrames,
               };
             }
           } else if (now - track.lastSeen < 700) {
@@ -228,24 +343,25 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             maxSpeed: 0,
             parked: false,
             alerted: false,
+            anomalyFrames: 0,
           };
         });
 
         tracksRef.current = updated;
 
-        // 2. Accident heuristics on confirmed tracks (stricter confirmation = fewer false boxes)
-        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 5 && t.score >= 0.6);
+        // 2. Accident heuristics on stable tracks. The uploaded example is a
+        // short, elevated-camera clip, so use motion history instead of waiting
+        // for long tracks or requiring a single very high confidence frame.
+        const confirmed = Object.entries(updated).filter(([, t]) => t.hits >= 2 && t.score >= 0.36);
         confirmed.forEach(([key, track]) => {
           if (track.alerted) return;
-          // Parked cars / cars waiting at a red light stay still smoothly — never alert on them.
-          if (track.parked || track.maxSpeed < 0.4) return;
-          // A violent loss of speed catches impacts with poles/walls, which are
-          // not object classes available in COCO-SSD. Gentle braking is ignored.
+          // A stationary car by itself is normal. It may still be the target of
+          // a moving car, so parked tracks remain in pairwise collision checks.
           const suddenDeceleration =
-            track.hits >= 10 &&
-            track.prevSpeed > 0.7 &&
-            track.speed < track.prevSpeed * 0.12 &&
-            track.stillFrames <= 2;
+            track.hits >= 3 &&
+            track.prevSpeed > 0.38 &&
+            track.speed < track.prevSpeed * 0.5 &&
+            track.stillFrames <= 3;
           const previousMagnitude = Math.hypot(track.prevVx, track.prevVy);
           const currentMagnitude = Math.hypot(track.vx, track.vy);
           const directionCosine =
@@ -253,18 +369,21 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
               ? (track.prevVx * track.vx + track.prevVy * track.vy) / (previousMagnitude * currentMagnitude)
               : 1;
           const abruptDirectionChange =
-            track.hits >= 10 && previousMagnitude > 0.6 && currentMagnitude > 0.45 && directionCosine < -0.35;
-          // Detect contact before boxes heavily overlap, while the vehicles are approaching at speed.
+            track.hits >= 3 && track.prevSpeed > 0.28 && track.speed > 0.2 && directionCosine < 0.45;
+          const area = track.bbox[2] * track.bbox[3];
+          const areaChange = Math.abs(area - track.previousArea) / Math.max(track.previousArea, 1);
+          const unstableScale = track.hits >= 3 && track.speed > 0.2 && areaChange > 0.25;
           const collision = confirmed.some(
             ([otherKey, other]) =>
               otherKey !== key &&
-              other.hits >= 5 &&
-              !other.parked &&
-              (track.speed > 0.5 || other.speed > 0.5) &&
               vehiclesAreInContact(track, other),
           );
+          const abnormalMotion = !track.parked && (suddenDeceleration || abruptDirectionChange || unstableScale);
+          track.anomalyFrames = abnormalMotion ? track.anomalyFrames + 1 : Math.max(0, track.anomalyFrames - 1);
 
-          if (collision || suddenDeceleration || abruptDirectionChange) {
+          // Vehicle contact is urgent. Single-vehicle anomalies need two
+          // consecutive observations to avoid alerts from detector jitter.
+          if (collision || track.anomalyFrames >= 2) {
             track.alerted = true;
             callbacksRef.current.onAccident(
               id,
@@ -318,6 +437,26 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             ctx.fillStyle = "white";
             ctx.fillText(labelText, targetX + 5, targetY - 4);
           });
+
+          const motionAlert = motionAlertRef.current;
+          if (motionAlert && motionAlert.until > now) {
+            const [x, y, width, height] = motionAlert.bbox;
+            const targetX = x * scaleX;
+            const targetY = y * scaleY;
+            const targetW = width * scaleX;
+            const targetH = height * scaleY;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "rgba(239, 68, 68, 0.6)";
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(targetX, targetY, targetW, targetH);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(targetX, Math.max(0, targetY - 16), 74, 16);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 10px monospace";
+            ctx.fillText("ABNORMAL", targetX + 5, Math.max(12, targetY - 4));
+          }
         }
       }
     }

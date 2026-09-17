@@ -232,6 +232,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 abruptStop
                   ? "พบรถหยุดหรือเปลี่ยนสภาพการเคลื่อนที่ฉับพลัน — กรุณาตรวจสอบ"
                   : "พบการเคลื่อนไหวผิดปกติคล้ายเหตุชน — กรุณาตรวจสอบ",
+                captureSnapshot(),
               );
             }
           }
@@ -411,6 +412,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 : suddenDeceleration
                   ? "สงสัยรถชนเสาหรือวัตถุคงที่ — หยุดฉับพลันรุนแรง"
                   : "พบการเคลื่อนไหวผิดปกติรุนแรง — กรุณาตรวจสอบ",
+              captureSnapshot(),
             );
           }
         });

@@ -630,7 +630,7 @@ function Index() {
     }
   };
 
-  const handleAccident = (id: number, reason: string) => {
+  const handleAccident = (id: number, reason: string, snapshot: string | null) => {
     const now = Date.now();
     // Throttle: max one alert per camera every 8 seconds
     if (now - (lastAlertRef.current[id] ?? 0) < 8000) return;
@@ -646,6 +646,8 @@ function Index() {
           type: reason,
           time: new Date().toLocaleTimeString("en-US", { hour12: false }),
           status: "pending" as const,
+          snapshot,
+          lineStatus: "idle" as const,
         },
         ...prev,
       ].slice(0, 8),
@@ -654,6 +656,48 @@ function Index() {
 
   const verifyIncident = (incidentId: string, status: "confirmed" | "rejected") => {
     setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status } : i)));
+    if (status !== "confirmed") return;
+
+    const incident = incidents.find((i) => i.id === incidentId);
+    if (!incident) return;
+    const place = CAMERA_LOCATIONS[incident.cam] ?? CAMERA_LOCATIONS[1]!;
+
+    setIncidents((prev) =>
+      prev.map((i) => (i.id === incidentId ? { ...i, lineStatus: "sending" as const } : i)),
+    );
+
+    sendToLine({
+      data: {
+        camera: incident.cam,
+        reason: incident.type,
+        time: incident.time,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        locationName: place.name,
+        ...(incident.snapshot ? { snapshot: incident.snapshot } : {}),
+      },
+    })
+      .then((result) => {
+        setIncidents((prev) =>
+          prev.map((i) =>
+            i.id === incidentId
+              ? result.ok
+                ? { ...i, lineStatus: "sent" as const }
+                : { ...i, lineStatus: "failed" as const, lineError: result.error }
+              : i,
+          ),
+        );
+      })
+      .catch((error: unknown) => {
+        console.error("line alert failed", error);
+        setIncidents((prev) =>
+          prev.map((i) =>
+            i.id === incidentId
+              ? { ...i, lineStatus: "failed" as const, lineError: "ส่งแจ้งเตือนเข้าไลน์ไม่สำเร็จ" }
+              : i,
+          ),
+        );
+      });
   };
 
 

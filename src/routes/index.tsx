@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Upload, Camera, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sendLineAccidentAlert } from "@/lib/line-alert.functions";
 import "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-converter";
 import "@tensorflow/tfjs-backend-webgl";
@@ -574,6 +576,7 @@ function Index() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [currentTime, setCurrentTime] = useState("--:--:--");
   const lastAlertRef = useRef<Record<number, number>>({});
+  const sendToLine = useServerFn(sendLineAccidentAlert);
 
   useEffect(() => {
     const tick = () => setCurrentTime(new Date().toLocaleTimeString("en-US", { hour12: false }));

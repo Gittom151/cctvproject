@@ -32,7 +32,7 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
-  onAccident: (id: number, reason: string) => void;
+  onAccident: (id: number, reason: string, snapshot: string | null) => void;
 }
 
 interface Track {
@@ -115,6 +115,25 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   const callbacksRef = useRef({ onDetection, onAccident });
   modelRef.current = model;
   callbacksRef.current = { onDetection, onAccident };
+
+  // Freeze the current video frame as a JPEG so the incident report can carry
+  // the exact moment of the accident.
+  const captureSnapshot = (): string | null => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return null;
+    try {
+      const shot = document.createElement("canvas");
+      shot.width = 960;
+      shot.height = Math.round((video.videoHeight / video.videoWidth) * 960) || 540;
+      const ctx = shot.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, shot.width, shot.height);
+      return shot.toDataURL("image/jpeg", 0.82);
+    } catch (err) {
+      console.error("snapshot failed", err);
+      return null;
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

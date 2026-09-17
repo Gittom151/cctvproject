@@ -107,6 +107,10 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   const tracksRef = useRef<Record<number, Track>>({});
   const trackIdCounter = useRef(0);
   const modelRef = useRef(model);
+  const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previousFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const motionStateRef = useRef({ samples: 0, average: 0, previous: 0, alerted: false });
+  const motionAlertRef = useRef<{ bbox: [number, number, number, number]; until: number } | null>(null);
   const callbacksRef = useRef({ onDetection, onAccident });
   modelRef.current = model;
   callbacksRef.current = { onDetection, onAccident };
@@ -118,6 +122,9 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       tracksRef.current = {};
       trackIdCounter.current = 0;
       detectionCounter.current = 0;
+      previousFrameRef.current = null;
+      motionStateRef.current = { samples: 0, average: 0, previous: 0, alerted: false };
+      motionAlertRef.current = null;
       setDetections([]);
       const url = URL.createObjectURL(file);
       setVideoSrc(url);
@@ -131,6 +138,78 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const now = Date.now();
+
+      // Independent motion analysis keeps incident detection working when the
+      // object model misses small vehicles in elevated or distant CCTV views.
+      if (detectionCounter.current % 3 === 0) {
+        const motionCanvas = motionCanvasRef.current ?? document.createElement("canvas");
+        motionCanvas.width = 160;
+        motionCanvas.height = 90;
+        motionCanvasRef.current = motionCanvas;
+        const motionContext = motionCanvas.getContext("2d", { willReadFrequently: true });
+        if (motionContext) {
+          motionContext.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
+          const pixels = motionContext.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
+          const gray = new Uint8ClampedArray(motionCanvas.width * motionCanvas.height);
+          let changed = 0;
+          let minX = motionCanvas.width;
+          let minY = motionCanvas.height;
+          let maxX = 0;
+          let maxY = 0;
+          const previous = previousFrameRef.current;
+
+          for (let index = 0; index < gray.length; index++) {
+            const pixelIndex = index * 4;
+            gray[index] = Math.round(pixels[pixelIndex] * 0.299 + pixels[pixelIndex + 1] * 0.587 + pixels[pixelIndex + 2] * 0.114);
+            if (previous && Math.abs(gray[index] - previous[index]) > 24) {
+              const x = index % motionCanvas.width;
+              const y = Math.floor(index / motionCanvas.width);
+              // Ignore embedded timestamps and edge noise common in CCTV clips.
+              if (y > 5 && y < motionCanvas.height - 8) {
+                changed++;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+              }
+            }
+          }
+          previousFrameRef.current = gray;
+
+          if (previous) {
+            const motion = changed / (motionCanvas.width * motionCanvas.height);
+            const state = motionStateRef.current;
+            const previousAverage = state.average || motion;
+            const abruptSurge = state.samples >= 5 && motion > 0.018 && motion > previousAverage * 1.55;
+            const abruptStop = state.samples >= 7 && state.previous > 0.035 && motion < state.previous * 0.38;
+            state.samples++;
+            state.average = previousAverage * 0.86 + motion * 0.14;
+            state.previous = motion;
+
+            if (!state.alerted && (abruptSurge || abruptStop)) {
+              state.alerted = true;
+              const scaleX = video.videoWidth / motionCanvas.width;
+              const scaleY = video.videoHeight / motionCanvas.height;
+              const padding = 12;
+              const sourceBox: [number, number, number, number] = changed > 0
+                ? [
+                    Math.max(0, minX - padding) * scaleX,
+                    Math.max(0, minY - padding) * scaleY,
+                    Math.min(motionCanvas.width, maxX - minX + padding * 2) * scaleX,
+                    Math.min(motionCanvas.height, maxY - minY + padding * 2) * scaleY,
+                  ]
+                : [0, 0, video.videoWidth, video.videoHeight];
+              motionAlertRef.current = { bbox: sourceBox, until: now + 6000 };
+              callbacksRef.current.onAccident(
+                id,
+                abruptStop
+                  ? "พบรถหยุดหรือเปลี่ยนสภาพการเคลื่อนที่ฉับพลัน — กรุณาตรวจสอบ"
+                  : "พบการเคลื่อนไหวผิดปกติคล้ายเหตุชน — กรุณาตรวจสอบ",
+              );
+            }
+          }
+        }
+      }
 
       // 1. Detection phase — every 2nd frame for better temporal accuracy
       if (detectionCounter.current % 2 === 0) {
@@ -350,6 +429,26 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             ctx.fillStyle = "white";
             ctx.fillText(labelText, targetX + 5, targetY - 4);
           });
+
+          const motionAlert = motionAlertRef.current;
+          if (motionAlert && motionAlert.until > now) {
+            const [x, y, width, height] = motionAlert.bbox;
+            const targetX = x * scaleX;
+            const targetY = y * scaleY;
+            const targetW = width * scaleX;
+            const targetH = height * scaleY;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "rgba(239, 68, 68, 0.6)";
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(targetX, targetY, targetW, targetH);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(targetX, Math.max(0, targetY - 16), 74, 16);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 10px monospace";
+            ctx.fillText("ABNORMAL", targetX + 5, Math.max(12, targetY - 4));
+          }
         }
       }
     }

@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Upload, Camera, Activity, LayoutGrid, ShieldCheck, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sendLineAccidentAlert } from "@/lib/line-alert.functions";
 import "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-converter";
 import "@tensorflow/tfjs-backend-webgl";
@@ -32,7 +34,7 @@ interface CCTVMonitorProps {
   id: number;
   model: cocoSsd.ObjectDetection | null;
   onDetection: (id: number, objects: string[]) => void;
-  onAccident: (id: number, reason: string) => void;
+  onAccident: (id: number, reason: string, snapshot: string | null) => void;
 }
 
 interface Track {
@@ -115,6 +117,25 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   const callbacksRef = useRef({ onDetection, onAccident });
   modelRef.current = model;
   callbacksRef.current = { onDetection, onAccident };
+
+  // Freeze the current video frame as a JPEG so the incident report can carry
+  // the exact moment of the accident.
+  const captureSnapshot = (): string | null => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return null;
+    try {
+      const shot = document.createElement("canvas");
+      shot.width = 960;
+      shot.height = Math.round((video.videoHeight / video.videoWidth) * 960) || 540;
+      const ctx = shot.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, shot.width, shot.height);
+      return shot.toDataURL("image/jpeg", 0.82);
+    } catch (err) {
+      console.error("snapshot failed", err);
+      return null;
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -213,6 +234,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 abruptStop
                   ? "พบรถหยุดหรือเปลี่ยนสภาพการเคลื่อนที่ฉับพลัน — กรุณาตรวจสอบ"
                   : "พบการเคลื่อนไหวผิดปกติคล้ายเหตุชน — กรุณาตรวจสอบ",
+                captureSnapshot(),
               );
             }
           }
@@ -392,6 +414,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
                 : suddenDeceleration
                   ? "สงสัยรถชนเสาหรือวัตถุคงที่ — หยุดฉับพลันรุนแรง"
                   : "พบการเคลื่อนไหวผิดปกติรุนแรง — กรุณาตรวจสอบ",
+              captureSnapshot(),
             );
           }
         });
@@ -527,13 +550,33 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   );
 }
 
+interface Incident {
+  id: string;
+  cam: number;
+  type: string;
+  time: string;
+  status: "pending" | "confirmed" | "rejected";
+  snapshot: string | null;
+  lineStatus: "idle" | "sending" | "sent" | "failed";
+  lineError?: string;
+}
+
+// พิกัดสมมติของกล้องแต่ละตัว (แก้ไขได้ภายหลังเมื่อมีพิกัดจริง)
+const CAMERA_LOCATIONS: Record<number, { name: string; latitude: number; longitude: number }> = {
+  1: { name: "แยกรัชดา-ลาดพร้าว (สมมติ)", latitude: 13.796519, longitude: 100.574112 },
+  2: { name: "ถนนพระราม 9 ขาเข้า (สมมติ)", latitude: 13.758291, longitude: 100.565437 },
+  3: { name: "แยกอโศก-สุขุมวิท (สมมติ)", latitude: 13.737541, longitude: 100.560574 },
+  4: { name: "ถนนวิภาวดีรังสิต กม.6 (สมมติ)", latitude: 13.833216, longitude: 100.560129 },
+};
+
 function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
-  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string, status: "pending" | "confirmed" | "rejected"}[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [currentTime, setCurrentTime] = useState("--:--:--");
   const lastAlertRef = useRef<Record<number, number>>({});
+  const sendToLine = useServerFn(sendLineAccidentAlert);
 
   useEffect(() => {
     const tick = () => setCurrentTime(new Date().toLocaleTimeString("en-US", { hour12: false }));
@@ -590,7 +633,7 @@ function Index() {
     }
   };
 
-  const handleAccident = (id: number, reason: string) => {
+  const handleAccident = (id: number, reason: string, snapshot: string | null) => {
     const now = Date.now();
     // Throttle: max one alert per camera every 8 seconds
     if (now - (lastAlertRef.current[id] ?? 0) < 8000) return;
@@ -606,6 +649,8 @@ function Index() {
           type: reason,
           time: new Date().toLocaleTimeString("en-US", { hour12: false }),
           status: "pending" as const,
+          snapshot,
+          lineStatus: "idle" as const,
         },
         ...prev,
       ].slice(0, 8),
@@ -614,6 +659,48 @@ function Index() {
 
   const verifyIncident = (incidentId: string, status: "confirmed" | "rejected") => {
     setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status } : i)));
+    if (status !== "confirmed") return;
+
+    const incident = incidents.find((i) => i.id === incidentId);
+    if (!incident) return;
+    const place = CAMERA_LOCATIONS[incident.cam] ?? CAMERA_LOCATIONS[1]!;
+
+    setIncidents((prev) =>
+      prev.map((i) => (i.id === incidentId ? { ...i, lineStatus: "sending" as const } : i)),
+    );
+
+    sendToLine({
+      data: {
+        camera: incident.cam,
+        reason: incident.type,
+        time: incident.time,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        locationName: place.name,
+        ...(incident.snapshot ? { snapshot: incident.snapshot } : {}),
+      },
+    })
+      .then((result) => {
+        setIncidents((prev) =>
+          prev.map((i) =>
+            i.id === incidentId
+              ? result.ok
+                ? { ...i, lineStatus: "sent" as const }
+                : { ...i, lineStatus: "failed" as const, lineError: result.error }
+              : i,
+          ),
+        );
+      })
+      .catch((error: unknown) => {
+        console.error("line alert failed", error);
+        setIncidents((prev) =>
+          prev.map((i) =>
+            i.id === incidentId
+              ? { ...i, lineStatus: "failed" as const, lineError: "ส่งแจ้งเตือนเข้าไลน์ไม่สำเร็จ" }
+              : i,
+          ),
+        );
+      });
   };
 
 
@@ -698,6 +785,35 @@ function Index() {
                       <span className="text-[9px] font-mono text-neutral-500">{incident.time}</span>
                     </div>
                     <p className="text-xs font-medium text-neutral-300">{incident.type}</p>
+                    <p className="mt-1 text-[10px] text-neutral-500">
+                      จุดเกิดเหตุ: {(CAMERA_LOCATIONS[incident.cam] ?? CAMERA_LOCATIONS[1]!).name}
+                    </p>
+                    {incident.snapshot && (
+                      <img
+                        src={incident.snapshot}
+                        alt={`ภาพเหตุการณ์จากกล้อง CAM-0${incident.cam}`}
+                        className="mt-2 w-full rounded border border-neutral-800 object-cover"
+                      />
+                    )}
+                    {incident.lineStatus !== "idle" && (
+                      <p
+                        className={cn(
+                          "mt-2 text-[10px] font-bold",
+                          incident.lineStatus === "sent"
+                            ? "text-green-400"
+                            : incident.lineStatus === "failed"
+                              ? "text-amber-400"
+                              : "text-blue-400",
+                        )}
+                      >
+                        {incident.lineStatus === "sending"
+                          ? "กำลังส่งแจ้งเตือนเข้าไลน์..."
+                          : incident.lineStatus === "sent"
+                            ? "ส่งพิกัดและภาพเข้าไลน์ OA แล้ว"
+                            : `ส่งไลน์ไม่สำเร็จ: ${incident.lineError ?? "ไม่ทราบสาเหตุ"}`}
+                      </p>
+                    )}
+
 
                     {incident.status === "pending" ? (
                       <div className="mt-3 space-y-2">

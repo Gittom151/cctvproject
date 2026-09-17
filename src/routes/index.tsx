@@ -109,6 +109,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   const modelRef = useRef(model);
   const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const lastMotionTimeRef = useRef(-1);
   const motionStateRef = useRef({ samples: 0, average: 0, previous: 0, alerted: false });
   const motionAlertRef = useRef<{ bbox: [number, number, number, number]; until: number } | null>(null);
   const callbacksRef = useRef({ onDetection, onAccident });
@@ -123,6 +124,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
       trackIdCounter.current = 0;
       detectionCounter.current = 0;
       previousFrameRef.current = null;
+      lastMotionTimeRef.current = -1;
       motionStateRef.current = { samples: 0, average: 0, previous: 0, alerted: false };
       motionAlertRef.current = null;
       setDetections([]);
@@ -141,7 +143,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
       // Independent motion analysis keeps incident detection working when the
       // object model misses small vehicles in elevated or distant CCTV views.
-      if (detectionCounter.current % 3 === 0) {
+      if (video.currentTime - lastMotionTimeRef.current >= 0.09) {
+        lastMotionTimeRef.current = video.currentTime;
         const motionCanvas = motionCanvasRef.current ?? document.createElement("canvas");
         motionCanvas.width = 160;
         motionCanvas.height = 90;
@@ -161,7 +164,7 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
           for (let index = 0; index < gray.length; index++) {
             const pixelIndex = index * 4;
             gray[index] = Math.round(pixels[pixelIndex] * 0.299 + pixels[pixelIndex + 1] * 0.587 + pixels[pixelIndex + 2] * 0.114);
-            if (previous && Math.abs(gray[index] - previous[index]) > 24) {
+            if (previous && Math.abs(gray[index] - previous[index]) > 14) {
               const x = index % motionCanvas.width;
               const y = Math.floor(index / motionCanvas.width);
               // Ignore embedded timestamps and edge noise common in CCTV clips.
@@ -180,8 +183,8 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
             const motion = changed / (motionCanvas.width * motionCanvas.height);
             const state = motionStateRef.current;
             const previousAverage = state.average || motion;
-            const abruptSurge = state.samples >= 5 && motion > 0.018 && motion > previousAverage * 1.55;
-            const abruptStop = state.samples >= 7 && state.previous > 0.035 && motion < state.previous * 0.38;
+            const abruptSurge = state.samples >= 5 && motion > 0.012 && motion > previousAverage * 1.32;
+            const abruptStop = state.samples >= 7 && state.previous > 0.018 && motion < state.previous * 0.58;
             state.samples++;
             state.average = previousAverage * 0.86 + motion * 0.14;
             state.previous = motion;

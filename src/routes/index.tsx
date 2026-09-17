@@ -163,8 +163,13 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
 
           for (let index = 0; index < gray.length; index++) {
             const pixelIndex = index * 4;
-            gray[index] = Math.round(pixels[pixelIndex] * 0.299 + pixels[pixelIndex + 1] * 0.587 + pixels[pixelIndex + 2] * 0.114);
-            if (previous && Math.abs(gray[index] - previous[index]) > 14) {
+            const red = pixels[pixelIndex] ?? 0;
+            const green = pixels[pixelIndex + 1] ?? 0;
+            const blue = pixels[pixelIndex + 2] ?? 0;
+            const luminance = Math.round(red * 0.299 + green * 0.587 + blue * 0.114);
+            gray[index] = luminance;
+            const previousLuminance = previous?.[index];
+            if (previousLuminance !== undefined && Math.abs(luminance - previousLuminance) > 14) {
               const x = index % motionCanvas.width;
               const y = Math.floor(index / motionCanvas.width);
               // Ignore embedded timestamps and edge noise common in CCTV clips.

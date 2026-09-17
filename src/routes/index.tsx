@@ -785,6 +785,35 @@ function Index() {
                       <span className="text-[9px] font-mono text-neutral-500">{incident.time}</span>
                     </div>
                     <p className="text-xs font-medium text-neutral-300">{incident.type}</p>
+                    <p className="mt-1 text-[10px] text-neutral-500">
+                      จุดเกิดเหตุ: {(CAMERA_LOCATIONS[incident.cam] ?? CAMERA_LOCATIONS[1]!).name}
+                    </p>
+                    {incident.snapshot && (
+                      <img
+                        src={incident.snapshot}
+                        alt={`ภาพเหตุการณ์จากกล้อง CAM-0${incident.cam}`}
+                        className="mt-2 w-full rounded border border-neutral-800 object-cover"
+                      />
+                    )}
+                    {incident.lineStatus !== "idle" && (
+                      <p
+                        className={cn(
+                          "mt-2 text-[10px] font-bold",
+                          incident.lineStatus === "sent"
+                            ? "text-green-400"
+                            : incident.lineStatus === "failed"
+                              ? "text-amber-400"
+                              : "text-blue-400",
+                        )}
+                      >
+                        {incident.lineStatus === "sending"
+                          ? "กำลังส่งแจ้งเตือนเข้าไลน์..."
+                          : incident.lineStatus === "sent"
+                            ? "ส่งพิกัดและภาพเข้าไลน์ OA แล้ว"
+                            : `ส่งไลน์ไม่สำเร็จ: ${incident.lineError ?? "ไม่ทราบสาเหตุ"}`}
+                      </p>
+                    )}
+
 
                     {incident.status === "pending" ? (
                       <div className="mt-3 space-y-2">

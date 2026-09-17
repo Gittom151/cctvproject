@@ -548,11 +548,30 @@ function CCTVMonitor({ id, model, onDetection, onAccident }: CCTVMonitorProps) {
   );
 }
 
+interface Incident {
+  id: string;
+  cam: number;
+  type: string;
+  time: string;
+  status: "pending" | "confirmed" | "rejected";
+  snapshot: string | null;
+  lineStatus: "idle" | "sending" | "sent" | "failed";
+  lineError?: string;
+}
+
+// พิกัดสมมติของกล้องแต่ละตัว (แก้ไขได้ภายหลังเมื่อมีพิกัดจริง)
+const CAMERA_LOCATIONS: Record<number, { name: string; latitude: number; longitude: number }> = {
+  1: { name: "แยกรัชดา-ลาดพร้าว (สมมติ)", latitude: 13.796519, longitude: 100.574112 },
+  2: { name: "ถนนพระราม 9 ขาเข้า (สมมติ)", latitude: 13.758291, longitude: 100.565437 },
+  3: { name: "แยกอโศก-สุขุมวิท (สมมติ)", latitude: 13.737541, longitude: 100.560574 },
+  4: { name: "ถนนวิภาวดีรังสิต กม.6 (สมมติ)", latitude: 13.833216, longitude: 100.560129 },
+};
+
 function Index() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [activeDetections, setActiveDetections] = useState<Record<number, string[]>>({});
-  const [incidents, setIncidents] = useState<{id: string, cam: number, type: string, time: string, status: "pending" | "confirmed" | "rejected"}[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [currentTime, setCurrentTime] = useState("--:--:--");
   const lastAlertRef = useRef<Record<number, number>>({});
 

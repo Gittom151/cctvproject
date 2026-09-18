@@ -1,28 +1,144 @@
-# Gentle Helper
+# ระบบกล้องวงจรปิดตรวจจับอุบัติเหตุรถยนต์อัตโนมัติ
 
-An AI-powered monitoring system that detects vehicle accidents from CCTV feeds and sends real-time incident alerts to a LINE Official Account.
+ระบบตรวจจับอุบัติเหตุรถยนต์จากภาพกล้องวงจรปิดด้วยปัญญาประดิษฐ์ (AI) เมื่อพบเหตุการณ์ต้องสงสัยจะแจ้งเตือนบนเว็บแดชบอร์ดให้เจ้าหน้าที่ตรวจสอบ เมื่อยืนยันว่าเป็นเหตุจริง ระบบจะส่งภาพเหตุการณ์พร้อมพิกัดตำแหน่งไปยัง LINE Official Account (LINE OA) โดยอัตโนมัติ
 
-The application analyzes video streams to identify collisions and suspicious driving behavior in real-time. It features an interactive dashboard where users can verify flagged events to ensure accuracy. Upon confirmation, the system automatically dispatches incident summaries, location coordinates, and captured images to a designated LINE OA for immediate notification.
+---
 
-This project was built with [Lovable](https://lovable.dev).
+## สารบัญ
+- [ภาพรวมระบบ](#ภาพรวมระบบ)
+- [องค์ประกอบของระบบ](#องค์ประกอบของระบบ)
+- [การติดตั้ง](#การติดตั้ง)
+- [การตั้งค่า](#การตั้งค่า)
+- [วิธีการใช้งาน](#วิธีการใช้งาน)
+- [โครงสร้างโปรเจกต์](#โครงสร้างโปรเจกต์)
+- [ปัญหาที่พบบ่อย](#ปัญหาที่พบบ่อย)
 
-**Live app**: https://cctvproject.lovable.app
+---
 
-## Build with Lovable
+## ภาพรวมระบบ
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/9904c7b4-0b0e-4d70-90d4-9df98e9893d0).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
 ```
+กล้องวงจรปิด → AI ตรวจจับ (YOLO) → เว็บแดชบอร์ด (Lovable) → เจ้าหน้าที่ยืนยัน → LINE OA
+```
+
+1. กล้องวงจรปิดบันทึกภาพต่อเนื่อง
+2. โมเดล AI วิเคราะห์ภาพแบบเรียลไทม์เพื่อตรวจจับพฤติกรรมที่เข้าข่ายอุบัติเหตุ
+3. เมื่อพบเหตุต้องสงสัย ระบบสร้างการแจ้งเตือนขึ้นบนเว็บแดชบอร์ด
+4. เจ้าหน้าที่ตรวจสอบภาพเหตุการณ์ แล้วกด **ยืนยัน** หรือ **ยกเลิก**
+5. หากยืนยัน ระบบส่งภาพและพิกัดไปยัง LINE OA โดยอัตโนมัติ
+
+---
+
+## องค์ประกอบของระบบ
+
+| ส่วนประกอบ | เทคโนโลยีที่ใช้ | หน้าที่ |
+|---|---|---|
+| AI Detection | Python, OpenCV, YOLO | ตรวจจับอุบัติเหตุจากภาพกล้อง |
+| Backend / API | Flask หรือ FastAPI | เชื่อมส่วนต่าง ๆ เข้าด้วยกัน |
+| Web Dashboard | Lovable | หน้าจอแจ้งเตือนและยืนยันเหตุการณ์ |
+| ฐานข้อมูล | Supabase / PostgreSQL | จัดเก็บข้อมูลเหตุการณ์ |
+| การแจ้งเตือน | LINE Messaging API | ส่งภาพและพิกัดไปยัง LINE OA |
+
+---
+
+## การติดตั้ง
+
+### สิ่งที่ต้องเตรียมก่อน
+- Python 3.9 ขึ้นไป
+- กล้องวงจรปิดที่รองรับการสตรีมภาพ (RTSP) หรือไฟล์วิดีโอสำหรับทดสอบ
+- บัญชี LINE Official Account และ Channel Access Token
+- บัญชี Supabase (หรือฐานข้อมูลอื่นที่ต้องการใช้)
+
+### ขั้นตอนติดตั้ง
+
+```bash
+# 1. โคลนโปรเจกต์
+git clone https://github.com/<username>/<repo-name>.git
+cd <repo-name>
+
+# 2. สร้างและเปิดใช้งาน virtual environment
+python -m venv venv
+source venv/bin/activate      # macOS/Linux
+venv\Scripts\activate         # Windows
+
+# 3. ติดตั้งไลบรารีที่จำเป็น
+pip install -r requirements.txt
+```
+
+---
+
+## การตั้งค่า
+
+สร้างไฟล์ `.env` ที่ root ของโปรเจกต์ แล้วกรอกค่าต่อไปนี้:
+
+```env
+CAMERA_SOURCE=rtsp://<ip-address>/stream       # หรือ path ไฟล์วิดีโอสำหรับทดสอบ
+LINE_CHANNEL_ACCESS_TOKEN=<your-line-token>
+LINE_TARGET_ID=<user-or-group-id>
+DATABASE_URL=<your-database-connection-string>
+```
+
+> **หมายเหตุ:** ห้าม commit ไฟล์ `.env` ขึ้น GitHub ให้เพิ่ม `.env` ไว้ใน `.gitignore`
+
+### วิธีขอ LINE Channel Access Token
+1. เข้า [LINE Developers Console](https://developers.line.biz/console/)
+2. สร้าง Provider และ Messaging API Channel
+3. ไปที่แท็บ **Messaging API** เพื่อออก Channel Access Token
+4. ใน LINE Official Account Manager เปิดใช้งาน Webhook และปิด Auto-reply
+
+---
+
+## วิธีการใช้งาน
+
+### 1. อัพโหลดวีดีโอการชนตัวอย่าง
+
+### 2. เปิดเว็บแดชบอร์ด
+
+เข้าลิงก์เว็บแดชบอร์ดที่พัฒนาไว้บน Lovable (ใส่ลิงก์จริงของโปรเจกต์ที่นี่) หน้าจอหลักจะแสดง:
+- รายการแจ้งเตือนเหตุการณ์ล่าสุด เรียงตามเวลา
+- สถานะ: `รอตรวจสอบ` / `ยืนยันแล้ว` / `ยกเลิก`
+
+### 3. ตรวจสอบและยืนยันเหตุการณ์
+
+เมื่อมีการแจ้งเตือนขึ้นใหม่:
+1. คลิกเข้าไปดูรายละเอียดเหตุการณ์
+2. ตรวจสอบภาพ/คลิปที่ระบบตรวจจับได้
+3. หากเป็นอุบัติเหตุจริง กดปุ่ม **ยืนยันเหตุการณ์**
+4. หากไม่ใช่ กดปุ่ม **ยกเลิก** เพื่อปิดการแจ้งเตือน
+
+### 4. การแจ้งเตือนไปยัง LINE OA
+
+หลังกดยืนยัน ระบบจะส่งข้อความไปยัง LINE OA โดยอัตโนมัติ ประกอบด้วย:
+- ภาพนิ่งหรือคลิปเหตุการณ์
+- พิกัดตำแหน่ง (ละติจูด/ลองจิจูด)
+- วันเวลาที่เกิดเหตุ
+
+---
+
+## โครงสร้างโปรเจกต์
+
+```
+├── main.py                # จุดเริ่มต้นของระบบตรวจจับ
+├── detection/              # โมดูล AI ตรวจจับอุบัติเหตุ
+│   ├── model.py
+│   └── utils.py
+├── api/                    # Backend API
+│   └── routes.py
+├── dashboard/               # ไฟล์ที่เกี่ยวข้องกับเว็บแดชบอร์ด (Lovable)
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+---
+
+## ปัญหาที่พบบ่อย
+
+| ปัญหา | สาเหตุที่เป็นไปได้ | วิธีแก้ |
+|---|---|---|
+| ไม่มีภาพจากกล้อง | URL กล้องผิด หรือกล้องไม่รองรับ RTSP | ตรวจสอบ `CAMERA_SOURCE` ใน `.env` |
+| ไม่พบการแจ้งเตือนบนแดชบอร์ด | Backend ไม่ได้เชื่อมกับฐานข้อมูล | ตรวจสอบ `DATABASE_URL` และการเชื่อมต่อ |
+| กด "ยืนยัน" แล้วไม่มีข้อความไปที่ LINE | Token หมดอายุ หรือยังไม่ได้เพิ่มเพื่อน LINE OA | ตรวจสอบ `LINE_CHANNEL_ACCESS_TOKEN` และสถานะบัญชี |
+| ตรวจจับอุบัติเหตุผิดพลาดบ่อย | แสงน้อยหรือมุมกล้องไม่เหมาะสม | ปรับตำแหน่ง/มุมกล้อง หรือเพิ่มข้อมูลฝึกโมเดล |
+
+---
